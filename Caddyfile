@@ -1,0 +1,12 @@
+{
+    email admin@pager.duckdns.org
+}
+
+pager.duckdns.org {
+    reverse_proxy /mcp/* pager-mcp:8000
+    reverse_proxy /dashboard/* pager-dashboard:8501
+    reverse_proxy /v1/* pager-dashboard:8501
+    reverse_proxy /healthz pager-dashboard:8501
+}
+
+# Self-hosters: replace pager.duckdns.org with their domain
