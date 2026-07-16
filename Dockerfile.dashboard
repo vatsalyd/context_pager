@@ -4,16 +4,29 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    g++ \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON=python3.12
+
+COPY pyproject.toml uv.lock README.md ./
+
+# Pre-install CPU-only torch BEFORE uv sync
+RUN uv pip install --system --no-cache-dir \
+    --index-url https://download.pytorch.org/whl/cpu \
+    torch torchvision torchaudio
+
+RUN uv sync --frozen --no-dev --no-install-project
 
 COPY src ./src
 COPY dashboard ./dashboard
+
+RUN uv sync --frozen --no-dev
 
 EXPOSE 8501
 CMD ["uv", "run", "python", "-m", "context_pager.serve.dashboard"]
