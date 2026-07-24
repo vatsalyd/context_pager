@@ -136,6 +136,13 @@ async def lifespan(app) -> AsyncGenerator[None, None]:
         # pay the multi-GB model download on startup. They load on first tool call.
         await Dependencies.pg_pool()
         await Dependencies.redis()
+        
+        # Start rollup background task
+        from context_pager.telemetry.rollup import rollup_loop
+        rollup_task = asyncio.create_task(rollup_loop())
+        
         yield
+        
+        rollup_task.cancel()
     finally:
         await Dependencies.close()

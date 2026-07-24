@@ -38,6 +38,14 @@ async def healthz():
     return {"status": "ok"}
 
 
+@app.post("/v1/admin/rollup")
+async def trigger_rollup():
+    """Manually trigger rollup (admin use)."""
+    from context_pager.telemetry.rollup import rollup_audit_events
+    n = await rollup_audit_events()
+    return {"rolled_up": n}
+
+
 @app.post("/v1/signup")
 async def signup(request: Request):
     """Create a user + issue an API key. No auth required."""
@@ -69,8 +77,34 @@ async def signup(request: Request):
 
 @app.get("/v1/usage")
 async def get_usage():
-    # TODO: implement usage stats
-    return {"tool_calls": 0, "tokens_compressed": 0, "storage_bytes": 0, "est_cost_usd": 0.0}
+    """Return usage stats from tenant_usage_daily for current tenant."""
+    tid = tenant_id_var.get() or "default"
+    async with acquire_conn(tid) as conn:
+        # Get today's stats
+        row = await conn.fetchrow("""
+            SELECT 
+                coalesce(sum(tool_calls), 0) as tool_calls,
+                coalesce(sum(tokens_compressed), 0) as tokens_compressed,
+                coalesce(sum(est_cost_usd), 0) as est_cost_usd
+            FROM tenant_usage_daily
+            WHERE tenant_id = $1
+              AND date >= current_date - interval '7 days'
+        """, tid)
+        
+        # Get storage usage
+        storage = await conn.fetchrow("""
+            SELECT 
+                coalesce(sum(pg_column_size(content)), 0) as storage_bytes
+            FROM documents
+            WHERE tenant_id = $1
+        """, tid)
+        
+    return {
+        "tool_calls": row["tool_calls"],
+        "tokens_compressed": row["tokens_compressed"],
+        "storage_bytes": storage["storage_bytes"],
+        "est_cost_usd": float(row["est_cost_usd"]),
+    }
 
 
 @app.post("/v1/documents")
@@ -251,31 +285,60 @@ async def dashboard():
         <title>Context Pager Dashboard</title>
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <style>
-            body { font-family: system-ui; margin: 40px; }
-            .card { border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 20px 0; }
-            .metric { font-size: 2em; font-weight: bold; color: #2563eb; }
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body { font-family: system-ui, -apple-system, sans-serif; background: #f5f5f5; padding: 20px; }
+            .container { max-width: 1200px; margin: 0 auto; }
+            h1 { color: #1f2937; margin-bottom: 24px; }
+            .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 24px; }
+            .card { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+            .card h2 { font-size: 14px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+            .metric { font-size: 2.5em; font-weight: 700; color: #2563eb; }
+            .metric.green { color: #10b981; }
+            .metric.purple { color: #8b5cf6; }
+            .chart-card { grid-column: span 2; }
+            @media (max-width: 768px) { .chart-card { grid-column: span 1; } }
         </style>
     </head>
     <body>
-        <h1>Context Pager Dashboard</h1>
-        <div class="card">
-            <h2>Cost Savings</h2>
-            <div class="metric" id="savings">$0.00</div>
-        </div>
-        <div class="card">
-            <h2>Total Tokens Compressed</h2>
-            <div class="metric" id="tokens">0</div>
-        </div>
-        <div class="card">
-            <canvas id="costChart"></canvas>
+        <div class="container">
+            <h1>Context Pager Dashboard</h1>
+            <div class="grid">
+                <div class="card">
+                    <h2>Cost Saved (7d)</h2>
+                    <div class="metric green" id="savings">$0.00</div>
+                </div>
+                <div class="card">
+                    <h2>Tokens Compressed (7d)</h2>
+                    <div class="metric" id="tokens">0</div>
+                </div>
+                <div class="card">
+                    <h2>Tool Calls (7d)</h2>
+                    <div class="metric purple" id="calls">0</div>
+                </div>
+                <div class="card">
+                    <h2>Storage Used</h2>
+                    <div class="metric" id="storage">0 KB</div>
+                </div>
+                <div class="card chart-card">
+                    <h2>Cost Savings Trend</h2>
+                    <canvas id="costChart"></canvas>
+                </div>
+            </div>
         </div>
         <script>
+            function formatBytes(bytes) {
+                if (bytes < 1024) return bytes + ' B';
+                if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+                return (bytes/(1024*1024)).toFixed(1) + ' MB';
+            }
             async function loadStats() {
                 try {
                     const resp = await fetch('/v1/usage');
                     const data = await resp.json();
-                    document.getElementById('savings').textContent = '$' + data.est_cost_usd.toFixed(2);
+                    document.getElementById('savings').textContent = '$' + data.est_cost_usd.toFixed(4);
                     document.getElementById('tokens').textContent = data.tokens_compressed.toLocaleString();
+                    document.getElementById('calls').textContent = data.tool_calls.toLocaleString();
+                    document.getElementById('storage').textContent = formatBytes(data.storage_bytes);
                 } catch (e) {
                     console.error(e);
                 }
