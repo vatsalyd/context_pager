@@ -1,20 +1,19 @@
-version: "3.9"
-
 services:
   postgres:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_DB: pager
-      POSTGRES_USER: pager
-      POSTGRES_PASSWORD: password
+      POSTGRES_DB: ${POSTGRES_DB:-pager}
+      POSTGRES_USER: ${POSTGRES_USER:-pager}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pager -d pager"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pager} -d ${POSTGRES_DB:-pager}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
@@ -25,30 +24,25 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   ollama:
     image: ollama/ollama:latest
     profiles: ["self-host"]
     volumes:
       - ollama_data:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    restart: unless-stopped
 
   pager-mcp:
     build:
       context: .
       dockerfile: Dockerfile.mcp
     environment:
-      - DATABASE_URL=postgresql://pager:password@postgres:5432/pager
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-pager}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-pager}
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_URL=http://ollama:11434
       - OLLAMA_ENABLED=${OLLAMA_ENABLED:-false}
-      - LOG_LEVEL=INFO
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - CUDA_VISIBLE_DEVICES=
       - TRANSFORMERS_NO_CUDA=1
       - TOKENIZERS_PARALLELISM=false
@@ -57,37 +51,51 @@ services:
     volumes:
       - hf_cache:/data/hf_cache
     ports:
-      - "8000:8000"
+      - "${MCP_PORT:-8000}:8000"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/mcp"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     deploy:
       resources:
         limits:
           memory: 4G
+    restart: unless-stopped
 
   pager-dashboard:
     build:
       context: .
       dockerfile: Dockerfile.dashboard
     environment:
-      - DATABASE_URL=postgresql://pager:password@postgres:5432/pager
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-pager}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-pager}
       - REDIS_URL=redis://redis:6379/0
-      - SECRET_KEY=dev-secret-change-me
+      - SECRET_KEY=${SECRET_KEY:-change-this-in-production}
       - HF_HOME=/data/hf_cache
       - TRANSFORMERS_CACHE=/data/hf_cache
       - TOKENIZERS_PARALLELISM=false
     volumes:
       - hf_cache:/data/hf_cache
     ports:
-      - "8501:8501"
+      - "${DASHBOARD_PORT:-8501}:8501"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
 
   caddy:
     image: caddy:2-alpine
@@ -101,18 +109,21 @@ services:
     depends_on:
       - pager-mcp
       - pager-dashboard
+    restart: unless-stopped
 
   keepalive:
     build:
       context: .
       dockerfile: Dockerfile.keepalive
     environment:
-      - PUBLIC_URL=https://pager.duckdns.org
+      - PUBLIC_URL=${PUBLIC_URL:-https://pager.duckdns.org}
     deploy:
       resources:
         limits:
           cpus: "0.2"
           memory: 5G
+    profiles: ["production"]
+    restart: unless-stopped
 
 volumes:
   pg_data:
