@@ -32,13 +32,26 @@ The MCP server will be available at `http://localhost:8000/mcp` (configure your 
 
 Dashboard: `http://localhost:8501/dashboard/`
 
-## Tools Exposed
+## API Endpoints
+
+### MCP Tools
 
 | Tool | Description |
 |------|-------------|
 | `fetch_entity_graph(query, relation, page_token, limit)` | Structured entity/relation retrieval with pagination |
 | `compress_document(doc_id, focus_area, max_return_tokens)` | Zero-copy compression; raw text never leaves server |
 | `commit_to_long_term_memory(key, insights)` | Persist insights for automatic recall in future queries |
+
+### HTTP API
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/documents` | POST | Upload document for ingestion (multipart) |
+| `/v1/documents/{id}` | GET | Get document status and metadata |
+| `/v1/usage` | GET | Get usage statistics for current tenant |
+| `/v1/signup` | POST | Create user and get API key |
+| `/dashboard/` | GET | Web dashboard UI |
+| `/healthz` | GET | Health check |
 
 ## Agent Integration (LangGraph)
 
@@ -67,25 +80,29 @@ agent = create_agent(
 )
 ```
 
+See `examples/goldfish_agent/` for a complete working example.
+
 ## Deployment
 
-### Oracle Cloud Always Free (Recommended)
+### Docker (Recommended)
+
+```bash
+docker-compose up -d
+```
+
+This starts all services:
+- **postgres**: PostgreSQL 16 with pgvector
+- **redis**: Redis 7 for caching
+- **pager-mcp**: MCP server on port 8000
+- **pager-dashboard**: Dashboard on port 8501
+
+### Oracle Cloud Always Free
 
 1. Create Ampere A1 VM (4 OCPU / 24 GB RAM)
 2. Install Docker + Docker Compose
 3. `docker-compose up -d`
 4. Configure DuckDNS + Caddy for TLS
 5. Add keepalive daemon to defeat idle reclamation
-
-### Free Tier Components
-
-| Component | Service | Free Tier |
-|-----------|---------|-----------|
-| Postgres + pgvector | Self-hosted on Oracle VM | Unlimited (disk-bound) |
-| Redis | Self-hosted on Oracle VM | Unlimited (RAM-bound) |
-| Compute (MCP + Dashboard) | Oracle VM | 24 GB RAM, 4 OCPU |
-| LLM (optional) | Ollama on Oracle VM | CPU-only, slow |
-| TLS / Domain | Caddy + DuckDNS | Free |
 
 ## Key Features
 
@@ -101,11 +118,27 @@ agent = create_agent(
 
 ```
 context_pager/
-├── src/context_pager/     # MCP server + tools + knowledge layer
-├── dashboard/             # FastAPI + Jinja dashboard
-├── migrations/            # Alembic migrations
-├── docker-compose.yml     # Full stack
-└── Caddyfile              # Auto-TLS reverse proxy
+├── src/context_pager/           # MCP server + tools + knowledge layer
+│   ├── agent/                   # Agent middleware
+│   ├── cache/                   # Redis caching + decay
+│   ├── compression/             # LLMLingua-2 pipeline
+│   ├── governance/              # PII redaction middleware
+│   ├── ingestion/               # Document chunking + entity extraction
+│   ├── knowledge/               # BGE-m3 embedder + RRF retriever
+│   ├── rate_limit/              # Token bucket rate limiting
+│   ├── serve/                   # Dashboard + HTTP API
+│   └── telemetry/               # Audit logging + rollup
+├── examples/goldfish_agent/     # Reference agent implementation
+├── tests/benchmark/             # Benchmark suite
+├── migrations/                  # Database migrations
+├── docker-compose.yml           # Full stack
+└── Caddyfile                    # Auto-TLS reverse proxy
+```
+
+## Running Benchmarks
+
+```bash
+python -m tests.benchmark.run_benchmark --api-key YOUR_API_KEY --task all
 ```
 
 ## License
