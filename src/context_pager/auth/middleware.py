@@ -30,25 +30,28 @@ class AuthBackend(AuthenticationBackend):
         if not auth_header or not auth_header.startswith("Bearer "):
             return None
 
-        api_key = auth_header[7:]  # strip "Bearer "
+        api_key = auth_header[7:].strip()
         if not api_key.startswith(settings.api_key_prefix):
             return None
 
-        prefix = api_key[:8]  # pgr_xxxx...
+        prefix = api_key[:8]
         pool = await Dependencies.pg_pool()
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT tenant_id, hashed_api_key FROM users WHERE api_key_prefix = $1",
+        async with pool.acquire() as pg_conn:
+            row = await pg_conn.fetchrow(
+                "SELECT id, tenant_id, hashed_api_key FROM users WHERE api_key_prefix = $1",
                 prefix,
             )
             if not row:
                 return None
 
-            import hashlib
             expected_hash = hashlib.sha256(api_key.encode()).hexdigest()
             if not secrets.compare_digest(row["hashed_api_key"], expected_hash):
                 return None
 
-            return AuthCredentials(["authenticated"]), APIKeyUser(row["tenant_id"], prefix)
+            # Set tenant_id on the request state so downstream middleware + tools
+            # can read it via contextvar (copied in tenant_middleware).
+            conn.state.tenant_id = row["tenant_id"]
 
-    return None
+            return AuthCredentials(["authenticated"]), APIKeyUser(
+                row["tenant_id"], prefix
+            )

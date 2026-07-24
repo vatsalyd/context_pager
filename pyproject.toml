@@ -30,6 +30,9 @@ dependencies = [
     "pydantic-settings>=2.3.0",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0.0",
+    "torch>=2.0",
+    "torchvision>=0.15",
+    "torchaudio>=2.0",
 ]
 
 [dependency-groups]
@@ -43,6 +46,16 @@ dev = [
     "ruff>=0.4.0",
     "mypy>=1.9.0",
 ]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+torchaudio = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/context_pager"]

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import hashlib
 import json
-from typing import Any
+import time
 
-from context_pager.deps import Dependencies
+from context_pager.db import acquire_conn
+from context_pager.contextvar import tenant_id_var
 from context_pager.knowledge.retriever import retrieve_documents_rrf
-from context_pager.cache.lru import get_cached_compression, set_cached_compression
-from context_pager.cache.decay import touch_active_page
+from context_pager.cache.lru import get_cached_compression, set_cached_compression, touch_active_page
 from context_pager.telemetry.audit import log_audit_event
 from context_pager.telemetry.cost import calculate_savings
 
@@ -18,11 +17,8 @@ async def compress_document(
     max_return_tokens: int = 2048,
 ) -> str:
     """Fetch a compressed page of a document."""
-    from fastmcp import Context
-    import time
-
     start_time = time.time()
-    tenant_id = "default"  # Will be overridden by middleware
+    tenant_id = tenant_id_var.get()
 
     # Check cache
     cached = await get_cached_compression(tenant_id, doc_id, focus_area, max_return_tokens)
@@ -38,16 +34,20 @@ async def compress_document(
         )
 
     # Load raw document
-    pool = await Dependencies.pg_pool()
-    async with pool.acquire() as conn:
+    async with acquire_conn(tenant_id) as conn:
         row = await conn.fetchrow(
-            "SELECT content FROM documents WHERE id = $1 AND tenant_id = current_setting('app.tenant_id')",
+            "SELECT content FROM documents WHERE id = $1 AND tenant_id = current_setting('app.tenant_id', true)",
             doc_id,
         )
         if not row:
             return _error_envelope("compress_document", f"Document not found: {doc_id}")
-
         raw_text = row["content"]
+
+    # Enforce token budget
+    from context_pager.rate_limit.middleware import check_token_limit
+    from context_pager.compression.pipeline import count_tokens
+    if not await check_token_limit(tenant_id, count_tokens(raw_text)):
+        return _error_envelope("compress_document", "Token budget exceeded: daily compression limit reached")
 
     # Determine if Ollama should be used
     from context_pager.config import settings
@@ -62,8 +62,6 @@ async def compress_document(
         use_ollama=use_ollama,
     )
 
-    # Add cost savings
-    from context_pager.telemetry.cost import calculate_savings
     result.metadata.cost_saved_usd = calculate_savings(
         result.metadata.original_tokens,
         result.metadata.compressed_tokens,
@@ -73,11 +71,11 @@ async def compress_document(
     await set_cached_compression(tenant_id, doc_id, focus_area, max_return_tokens, result)
 
     # Track active page
-    await touch_active_page("default", doc_id, 1)
+    await touch_active_page(tenant_id, "default", doc_id, 1)
 
-    # Log audit
     await log_audit_event(
         tenant_id=tenant_id,
+        event_type="tool_call",
         tool_name="compress_document",
         doc_id=doc_id,
         original_tokens=result.metadata.original_tokens,

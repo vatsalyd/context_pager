@@ -2,31 +2,39 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# System deps for building native extensions
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    g++ \
-    libpq-dev \
+    gcc g++ libpq-dev curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
+# Set uv environment
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    UV_PYTHON=python3.12
+    UV_PYTHON=python3.12 \
+    PATH="/app/.venv/bin:$PATH" \
+    CUDA_VISIBLE_DEVICES="" \
+    CUDA_LAUNCH_BLOCKING="0"
 
+# Copy lockfile + project metadata
 COPY pyproject.toml uv.lock README.md ./
 
-# Pre-install CPU-only torch BEFORE uv sync
-RUN uv pip install --system --no-cache-dir \
-    --index-url https://download.pytorch.org/whl/cpu \
-    torch torchvision torchaudio
-
+# Sync all deps into .venv (torch pulled via FlagEmbedding; CPU index pinned
+# via [tool.uv.sources] in pyproject)
 RUN uv sync --frozen --no-dev --no-install-project
 
+# Copy source code + dashboard templates
 COPY src ./src
 COPY dashboard ./dashboard
 
+# Install the project itself into the venv
 RUN uv sync --frozen --no-dev
 
+# Pre-download spaCy model for Presidio (avoids runtime download failure)
+# Install pip into the venv first, then use spacy download
+RUN uv pip install pip && python -m spacy download en_core_web_sm
+
 EXPOSE 8501
-CMD ["uv", "run", "python", "-m", "context_pager.serve.dashboard"]
+CMD ["python", "-m", "context_pager.serve.dashboard"]

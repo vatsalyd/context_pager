@@ -26,6 +26,8 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+test_doc.txt
+debug_guc.py
 
 # Distribution
 dist/

@@ -6,12 +6,10 @@ services:
     environment:
       POSTGRES_DB: pager
       POSTGRES_USER: pager
-      POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
+      POSTGRES_PASSWORD: password
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d:ro
-    secrets:
-      - pg_password
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U pager -d pager"]
       interval: 10s
@@ -46,11 +44,18 @@ services:
       context: .
       dockerfile: Dockerfile.mcp
     environment:
-      - DATABASE_URL=postgresql://pager:${PG_PASSWORD}@postgres:5432/pager
+      - DATABASE_URL=postgresql://pager:password@postgres:5432/pager
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_URL=http://ollama:11434
       - OLLAMA_ENABLED=${OLLAMA_ENABLED:-false}
       - LOG_LEVEL=INFO
+      - CUDA_VISIBLE_DEVICES=
+      - TRANSFORMERS_NO_CUDA=1
+      - TOKENIZERS_PARALLELISM=false
+      - HF_HOME=/data/hf_cache
+      - TRANSFORMERS_CACHE=/data/hf_cache
+    volumes:
+      - hf_cache:/data/hf_cache
     ports:
       - "8000:8000"
     depends_on:
@@ -68,9 +73,14 @@ services:
       context: .
       dockerfile: Dockerfile.dashboard
     environment:
-      - DATABASE_URL=postgresql://pager:${PG_PASSWORD}@postgres:5432/pager
+      - DATABASE_URL=postgresql://pager:password@postgres:5432/pager
       - REDIS_URL=redis://redis:6379/0
-      - SECRET_KEY_FILE=/run/secrets/secret_key
+      - SECRET_KEY=dev-secret-change-me
+      - HF_HOME=/data/hf_cache
+      - TRANSFORMERS_CACHE=/data/hf_cache
+      - TOKENIZERS_PARALLELISM=false
+    volumes:
+      - hf_cache:/data/hf_cache
     ports:
       - "8501:8501"
     depends_on:
@@ -78,8 +88,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    secrets:
-      - secret_key
 
   caddy:
     image: caddy:2-alpine
@@ -109,12 +117,7 @@ services:
 volumes:
   pg_data:
   redis_data:
+  hf_cache:
   ollama_data:
   caddy_data:
   caddy_config:
-
-secrets:
-  pg_password:
-    file: ./secrets/pg_password.txt
-  secret_key:
-    file: ./secrets/secret_key.txt

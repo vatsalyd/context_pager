@@ -2,23 +2,24 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any
 
 from context_pager.deps import Dependencies
+from context_pager.db import acquire_conn
+from context_pager.contextvar import tenant_id_var
+from context_pager.knowledge.embedder import get_embedder
 from context_pager.telemetry.audit import log_audit_event
 
 
 async def commit_to_long_term_memory(key: str, insights: str) -> str:
+    """Persist key insight for automatic recall on future entity graph fetches."""
     start_time = time.time()
-    tenant_id = "default"
+    tenant_id = tenant_id_var.get()
     session_id = "default"
 
-    # Embed insights for future recall
-    pool = await Dependencies.pg_pool()
-    embedder = await Dependencies.embedder()
+    embedder = get_embedder()
     embedding = (await embedder.embed_dense([insights]))[0]
 
-    async with pool.acquire() as conn:
+    async with acquire_conn(tenant_id) as conn:
         await conn.execute("""
             INSERT INTO agent_memory (key, tenant_id, insights, embedding)
             VALUES ($1, $2, $3, $4)
@@ -45,12 +46,11 @@ async def commit_to_long_term_memory(key: str, insights: str) -> str:
 
 
 async def recall_relevant_insights(query: str, tenant_id: str, threshold: float = 0.78) -> list[dict]:
-    """Query agent_memory for insights similar to query embedding."""
-    embedder = await Dependencies.embedder()
+    """Q3: Query agent_memory for insights similar to query embedding (cosine > 0.78)."""
+    embedder = get_embedder()
     query_emb = (await embedder.embed_dense([query]))[0]
 
-    pool = await Dependencies.pg_pool()
-    async with pool.acquire() as conn:
+    async with acquire_conn(tenant_id) as conn:
         rows = await conn.fetch("""
             SELECT key, insights, 1 - (embedding <=> $1) AS similarity
             FROM agent_memory
@@ -58,5 +58,13 @@ async def recall_relevant_insights(query: str, tenant_id: str, threshold: float 
             ORDER BY embedding <=> $1
             LIMIT 5
         """, query_emb, tenant_id, threshold)
+
+        # Update last_recalled for surfaced insights
+        recalled_keys = [r["key"] for r in rows]
+        if recalled_keys:
+            await conn.execute("""
+                UPDATE agent_memory SET last_recalled = now()
+                WHERE key = ANY($1::text[])
+            """, recalled_keys)
 
     return [{"key": r["key"], "insights": r["insights"], "similarity": r["similarity"]} for r in rows]

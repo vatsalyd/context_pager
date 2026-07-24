@@ -38,3 +38,10 @@ async def decay_active_pages() -> None:
 
     for key in keys:
         await r.eval(DECAY_LUA, 1, key, LAMBDA, now_ms, MIN_RELEVANCE)
+
+
+async def touch_active_entity(tenant_id: str, session_id: str, entity_id: int) -> None:
+    """Track active entity in a Sorted Set for decay tracking."""
+    r = await Dependencies.redis()
+    member = f"entity:{entity_id}"
+    await r.zadd(f"pager:active:{tenant_id}:{session_id}", {member: time.time() * 1000})

@@ -3,16 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-import uuid
-from typing import Any
 
 from context_pager.deps import Dependencies
+from context_pager.contextvar import tenant_id_var
 from context_pager.knowledge.retriever import retrieve_entities_rrf, expand_entity_graph
-from context_pager.knowledge.semantic_router import route_query
 from context_pager.cache.lru import get_cached_entities, set_cached_entities
 from context_pager.cache.decay import touch_active_entity
 from context_pager.telemetry.audit import log_audit_event
-from context_pager.telemetry.cost import calculate_savings
 
 
 async def fetch_entity_graph(
@@ -21,40 +18,39 @@ async def fetch_entity_graph(
     page_token: str | None = None,
     limit: int = 20,
 ) -> str:
+    """Retrieve structured entity graph filtered by relation type."""
     start_time = time.time()
-    tenant_id = "default"  # Will be overridden by middleware
+    tenant_id = tenant_id_var.get()
     session_id = "default"
 
-    # Check cache first
-    cache_key = f"entity_graph:{hashlib.sha256(f'{query}:{relation}:{page_token}'.encode()).hexdigest()[:16]}"
+    # Q18: Cache key includes relation + page_token for filter-aware pagination
+    cache_key = hashlib.sha256(
+        f"{query}:{relation}:{page_token or ''}".encode()
+    ).hexdigest()[:16]
     cached = await get_cached_entities(tenant_id, cache_key)
     if cached:
-        cached["metadata"]["cache_hit"] = True
+        cached.setdefault("metadata", {})["cache_hit"] = True
         cached["metadata"]["elapsed_ms"] = int((time.time() - start_time) * 1000)
         return json.dumps(cached)
 
-    # Route query - for entity graph we search entities
-    route = await route_query(query)
-    if route != "structured":
-        # Still try entity search, but log
-        pass
-
-    # RRF retrieval over entities
+    # RRF retrieval over entities (uses dense + sparse, k=60)
     entity_hits = await retrieve_entities_rrf(query, relation, limit * 3)
 
-    # BFS expansion with pagination
+    # Q18: BFS expansion with `relation` filter + pagination
     entities, relations, next_page_token = await expand_entity_graph(
-        [h["id"] for h in entity_hits],
+        [h.id for h in entity_hits],
         relation,
         limit,
         page_token,
     )
 
-    # Silent recall from agent_memory
+    # Q3: Silent recall from agent_memory
     from context_pager.tools.commit_to_long_term_memory import recall_relevant_insights
     recalled = await recall_relevant_insights(query, tenant_id)
+    # Q3 spec: prepend "Recalled insight: {key}: {insights}" block
+    recalled_insights = [f"Recalled insight: {r['key']}: {r['insights']}" for r in recalled]
 
-    # Build response envelope
+    # Build response envelope per spec §4
     envelope = {
         "tool": "fetch_entity_graph",
         "query": query,
@@ -62,7 +58,7 @@ async def fetch_entity_graph(
         "entities": entities,
         "relations": relations,
         "summary": _generate_graph_summary(entities, relations),
-        "recalled_insights": recalled,
+        "recalled_insights": recalled_insights,
         "next_page_token": next_page_token,
         "metadata": {
             "entities_returned": len(entities),
@@ -94,7 +90,7 @@ async def fetch_entity_graph(
 def _generate_graph_summary(entities: list[dict], relations: list[dict]) -> str:
     if not entities:
         return "No entities found matching query."
-    types = {}
+    types: dict[str, int] = {}
     for e in entities:
         types[e["type"]] = types.get(e["type"], 0) + 1
     type_str = ", ".join(f"{v} {k}" for k, v in types.items())

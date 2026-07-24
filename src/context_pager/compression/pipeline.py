@@ -1,16 +1,11 @@
 from __future__ import annotations
 
-import hashlib
-import re
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Optional
-
-from presidio_analyzer import AnalyzerEngine
-from presidio_anonymizer import AnonymizerEngine
-from presidio_anonymizer.entities import OperatorConfig
 
 from context_pager.config import settings
 from context_pager.deps import Dependencies
+from context_pager.governance.pii_middleware import redact_text as pii_redact_with_counts
 
 
 @dataclass
@@ -37,47 +32,6 @@ class CompressedResult:
     pages: list[Page]
     summary: str
     metadata: CompressionMetadata
-
-
-# Presidio setup
-_analyzer = AnalyzerEngine()
-_anonymizer = AnonymizerEngine()
-
-PII_ENTITIES = [
-    "EMAIL_ADDRESS", "PHONE_NUMBER", "US_SSN", "CREDIT_CARD",
-    "IBAN_CODE", "IP_ADDRESS", "PERSON", "LOCATION", "ORGANIZATION",
-]
-
-OPERATORS = {
-    "DEFAULT": OperatorConfig("replace", {"new_value": "[REDACTED]"}),
-    "EMAIL_ADDRESS": OperatorConfig("replace", {"new_value": "[REDACTED_EMAIL]"}),
-    "PHONE_NUMBER": OperatorConfig("replace", {"new_value": "[REDACTED_PHONE]"}),
-    "US_SSN": OperatorConfig("replace", {"new_value": "[REDACTED_SSN]"}),
-    "CREDIT_CARD": OperatorConfig("replace", {"new_value": "[REDACTED_CARD]"}),
-    "IBAN_CODE": OperatorConfig("replace", {"new_value": "[REDACTED_IBAN]"}),
-}
-
-
-async def pii_redact_with_counts(text: str) -> tuple[str, dict[str, int]]:
-    """Redact PII and return redacted text + counts by type."""
-    if not text:
-        return text, {}
-
-    results = _analyzer.analyze(text=text, entities=PII_ENTITIES, language="en")
-    if not results:
-        return text, {}
-
-    anonymized = _anonymizer.anonymize(
-        text=text,
-        analyzer_results=results,
-        operators=OPERATORS,
-    )
-
-    counts: dict[str, int] = {}
-    for r in results:
-        counts[r.entity_type] = counts.get(r.entity_type, 0) + 1
-
-    return anonymized.text, counts
 
 
 async def pii_redact(text: str) -> str:
@@ -120,7 +74,7 @@ Output only the extracted text, no commentary.
 Text:
 {text}"""
     response = await ollama.generate(
-        model="llama3:8b-q4_K_M",
+        model=settings.ollama_model,
         prompt=prompt,
         options={"temperature": 0.1, "num_predict": target_tokens * 2},
     )
@@ -136,7 +90,7 @@ async def compress_pipeline(
     """Full compression pipeline: redact -> compress -> redact check."""
     original_tokens = count_tokens(raw_text)
 
-    # Short-circuit for small docs
+    # Q15: Short-circuit for small docs
     if original_tokens <= max_return_tokens:
         redacted, pii_counts = await pii_redact_with_counts(raw_text)
         return CompressedResult(
@@ -151,16 +105,16 @@ async def compress_pipeline(
             ),
         )
 
-    # Step 1: Pre-compression PII redaction
+    # Step 1: Pre-compression PII redaction (Q1)
     redacted_text, pii_counts = await pii_redact_with_counts(raw_text)
 
     # Step 2: Compression
     if use_ollama and focus_area:
-        # Two-stage: LLMLingua density reduction then Ollama query-focused
+        # Q4 Two-stage: LLMLingua density reduction then Ollama query-focused
         stage1 = await llmlingua_compress(redacted_text, max_return_tokens * 3)
         compressed = await ollama_extract(stage1, focus_area, max_return_tokens)
     else:
-        # Free tier: LLMLingua-2 only (focus_area ignored)
+        # Free tier / no focus: LLMLingua-2 only (focus_area accepted but ignored)
         compressed = await llmlingua_compress(redacted_text, max_return_tokens)
 
     # Step 3: Defense-in-depth PII scan on compressed output

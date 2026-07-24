@@ -1,0 +1,17 @@
+__pycache__
+*.pyc
+*.pyo
+.git
+.gitignore
+.env
+.env.example
+.venv
+*.md
+!README.md
+tests/
+docs/
+examples/
+Caddyfile
+alembic.ini
+secrets/
+*.log
