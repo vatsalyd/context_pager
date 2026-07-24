@@ -33,6 +33,26 @@ app = FastAPI(
 app.add_middleware(AuthenticationMiddleware, backend=AuthBackend())
 
 
+class DashboardTenantMiddleware:
+    """Copy request.state.tenant_id into contextvar for all dashboard requests."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        from starlette.requests import Request
+        request = Request(scope, receive=send)
+        tid = getattr(request.state, "tenant_id", "") or ""
+        token = tenant_id_var.set(tid)
+        try:
+            return await self.app(scope, receive, send)
+        finally:
+            tenant_id_var.reset(token)
+
+
+app.add_middleware(DashboardTenantMiddleware)
+
+
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
@@ -77,33 +97,55 @@ async def signup(request: Request):
 
 @app.get("/v1/usage")
 async def get_usage():
-    """Return usage stats from tenant_usage_daily for current tenant."""
+    """Return usage stats combining rolled-up historical + live audit_events for today."""
     tid = tenant_id_var.get() or "default"
     async with acquire_conn(tid) as conn:
-        # Get today's stats
-        row = await conn.fetchrow("""
+        # Historical: from tenant_usage_daily (excludes today)
+        historical = await conn.fetchrow("""
             SELECT 
                 coalesce(sum(tool_calls), 0) as tool_calls,
                 coalesce(sum(tokens_compressed), 0) as tokens_compressed,
                 coalesce(sum(est_cost_usd), 0) as est_cost_usd
             FROM tenant_usage_daily
             WHERE tenant_id = $1
-              AND date >= current_date - interval '7 days'
         """, tid)
-        
-        # Get storage usage
+
+        # Live: today's audit_events (not yet rolled up)
+        live = await conn.fetchrow("""
+            SELECT 
+                count(*) FILTER (WHERE event_type = 'tool_call') as tool_calls,
+                coalesce(sum(original_tokens - compressed_tokens), 0) as tokens_compressed,
+                coalesce(sum(cost_saved_usd), 0) as est_cost_usd
+            FROM audit_events
+            WHERE tenant_id = $1
+              AND created_at >= current_date
+        """, tid)
+
+        # Storage usage
         storage = await conn.fetchrow("""
             SELECT 
                 coalesce(sum(pg_column_size(content)), 0) as storage_bytes
             FROM documents
             WHERE tenant_id = $1
         """, tid)
-        
+
+        # Daily trend for chart (last 30 days)
+        trend_rows = await conn.fetch("""
+            SELECT date, tool_calls, tokens_compressed, est_cost_usd
+            FROM tenant_usage_daily
+            WHERE tenant_id = $1 AND date >= current_date - interval '30 days'
+            ORDER BY date
+        """, tid)
+
     return {
-        "tool_calls": row["tool_calls"],
-        "tokens_compressed": row["tokens_compressed"],
+        "tool_calls": historical["tool_calls"] + live["tool_calls"],
+        "tokens_compressed": historical["tokens_compressed"] + live["tokens_compressed"],
         "storage_bytes": storage["storage_bytes"],
-        "est_cost_usd": float(row["est_cost_usd"]),
+        "est_cost_usd": float(historical["est_cost_usd"] + live["est_cost_usd"]),
+        "trend": [
+            {"date": str(r["date"]), "calls": r["tool_calls"], "tokens": r["tokens_compressed"], "cost": float(r["est_cost_usd"])}
+            for r in trend_rows
+        ],
     }
 
 
@@ -276,6 +318,51 @@ async def get_document(doc_id: str):
     }
 
 
+@app.delete("/v1/documents/{doc_id}")
+async def delete_document(doc_id: str):
+    """Delete a document and all its chunks/entities/relations (cascade)."""
+    tid = tenant_id_var.get() or "default"
+    async with acquire_conn(tid) as conn:
+        doc = await conn.fetchrow(
+            "SELECT id FROM documents WHERE id = $1", doc_id,
+        )
+        if not doc:
+            return JSONResponse({"error": "not found"}, 404)
+
+        await conn.execute("DELETE FROM documents WHERE id = $1", doc_id)
+
+    return {"deleted": doc_id}
+
+
+@app.get("/v1/documents/{doc_id}/entities")
+async def get_document_entities(doc_id: str, limit: int = 50):
+    """List entities extracted from a document."""
+    tid = tenant_id_var.get() or "default"
+    async with acquire_conn(tid) as conn:
+        rows = await conn.fetch(
+            """SELECT id, type, name, properties, created_at
+               FROM entities
+               WHERE document_id = $1 AND tenant_id = $2
+               ORDER BY type, name
+               LIMIT $3""",
+            doc_id, tid, limit,
+        )
+        relations = await conn.fetch(
+            """SELECT er.from_id, er.to_id, er.relation, er.properties,
+                      ef.name as from_name, et.name as to_name
+               FROM entity_relations er
+               JOIN entities ef ON er.from_id = ef.id
+               JOIN entities et ON er.to_id = et.id
+               WHERE ef.document_id = $1 AND er.tenant_id = $2
+               LIMIT 100""",
+            doc_id, tid,
+        )
+    return {
+        "entities": [dict(r) for r in rows],
+        "relations": [dict(r) for r in relations],
+    }
+
+
 @app.get("/dashboard/", response_class=HTMLResponse)
 async def dashboard():
     return """
@@ -289,61 +376,191 @@ async def dashboard():
             body { font-family: system-ui, -apple-system, sans-serif; background: #f5f5f5; padding: 20px; }
             .container { max-width: 1200px; margin: 0 auto; }
             h1 { color: #1f2937; margin-bottom: 24px; }
+            h2 { color: #374151; font-size: 18px; margin-bottom: 12px; }
             .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 24px; }
             .card { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-            .card h2 { font-size: 14px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+            .card h3 { font-size: 14px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
             .metric { font-size: 2.5em; font-weight: 700; color: #2563eb; }
             .metric.green { color: #10b981; }
             .metric.purple { color: #8b5cf6; }
+            .metric.orange { color: #f59e0b; }
+            .full-width { grid-column: 1 / -1; }
             .chart-card { grid-column: span 2; }
             @media (max-width: 768px) { .chart-card { grid-column: span 1; } }
+            table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+            th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
+            th { color: #6b7280; font-weight: 500; }
+            tr:hover { background: #f9fafb; }
+            .status { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+            .status-ready { background: #d1fae5; color: #065f46; }
+            .status-processing { background: #fef3c7; color: #92400e; }
+            .status-failed { background: #fee2e2; color: #991b1b; }
+            .btn { padding: 6px 12px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; }
+            .btn-primary { background: #2563eb; color: white; }
+            .btn-danger { background: #ef4444; color: white; }
+            .btn:hover { opacity: 0.9; }
+            .entity-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+            .entity-tag { padding: 4px 10px; border-radius: 16px; font-size: 12px; font-weight: 500; }
+            .entity-person { background: #dbeafe; color: #1e40af; }
+            .entity-org { background: #ede9fe; color: #5b21b6; }
+            .entity-money { background: #d1fae5; color: #065f46; }
+            .entity-date { background: #fef3c7; color: #92400e; }
+            .entity-gpe { background: #fce7f3; color: #9d174d; }
+            .entity-email { background: #e0e7ff; color: #3730a3; }
+            .entity-phone { background: #ccfbf1; color: #0f766e; }
+            .entity-url { background: #f3e8ff; color: #7c3aed; }
+            .empty { color: #9ca3af; font-style: italic; padding: 20px; text-align: center; }
         </style>
     </head>
     <body>
         <div class="container">
             <h1>Context Pager Dashboard</h1>
+            <div class="grid" id="metrics"></div>
             <div class="grid">
-                <div class="card">
-                    <h2>Cost Saved (7d)</h2>
-                    <div class="metric green" id="savings">$0.00</div>
-                </div>
-                <div class="card">
-                    <h2>Tokens Compressed (7d)</h2>
-                    <div class="metric" id="tokens">0</div>
-                </div>
-                <div class="card">
-                    <h2>Tool Calls (7d)</h2>
-                    <div class="metric purple" id="calls">0</div>
-                </div>
-                <div class="card">
-                    <h2>Storage Used</h2>
-                    <div class="metric" id="storage">0 KB</div>
-                </div>
                 <div class="card chart-card">
-                    <h2>Cost Savings Trend</h2>
-                    <canvas id="costChart"></canvas>
+                    <h2>Cost Savings Trend (30d)</h2>
+                    <canvas id="costChart" height="80"></canvas>
+                </div>
+                <div class="card full-width">
+                    <h2>Documents</h2>
+                    <div id="docList"><div class="empty">Loading...</div></div>
+                </div>
+                <div class="card full-width" id="entityPanel" style="display:none;">
+                    <h2>Entities: <span id="entityDocName"></span></h2>
+                    <div id="entityList"></div>
                 </div>
             </div>
         </div>
         <script>
-            function formatBytes(bytes) {
-                if (bytes < 1024) return bytes + ' B';
-                if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
-                return (bytes/(1024*1024)).toFixed(1) + ' MB';
+            let costChart = null;
+
+            function formatBytes(b) {
+                if (b < 1024) return b + ' B';
+                if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+                return (b/1048576).toFixed(1) + ' MB';
             }
+            function fmt(n) { return n.toLocaleString(); }
+
             async function loadStats() {
                 try {
-                    const resp = await fetch('/v1/usage');
-                    const data = await resp.json();
-                    document.getElementById('savings').textContent = '$' + data.est_cost_usd.toFixed(4);
-                    document.getElementById('tokens').textContent = data.tokens_compressed.toLocaleString();
-                    document.getElementById('calls').textContent = data.tool_calls.toLocaleString();
-                    document.getElementById('storage').textContent = formatBytes(data.storage_bytes);
-                } catch (e) {
-                    console.error(e);
-                }
+                    const r = await fetch('/v1/usage');
+                    const d = await r.json();
+                    document.getElementById('metrics').innerHTML = `
+                        <div class="card"><h3>Cost Saved (all time)</h3><div class="metric green">$${d.est_cost_usd.toFixed(4)}</div></div>
+                        <div class="card"><h3>Tokens Compressed</h3><div class="metric">${fmt(d.tokens_compressed)}</div></div>
+                        <div class="card"><h3>Tool Calls</h3><div class="metric purple">${fmt(d.tool_calls)}</div></div>
+                        <div class="card"><h3>Storage Used</h3><div class="metric orange">${formatBytes(d.storage_bytes)}</div></div>
+                    `;
+                    if (d.trend && d.trend.length > 0) renderChart(d.trend);
+                } catch(e) { console.error(e); }
             }
+
+            function renderChart(trend) {
+                const ctx = document.getElementById('costChart').getContext('2d');
+                if (costChart) costChart.destroy();
+                costChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: trend.map(t => t.date),
+                        datasets: [{
+                            label: 'Tool Calls',
+                            data: trend.map(t => t.calls),
+                            backgroundColor: '#8b5cf6',
+                            yAxisID: 'y',
+                        }, {
+                            label: 'Tokens Saved',
+                            data: trend.map(t => t.tokens),
+                            backgroundColor: '#10b981',
+                            yAxisID: 'y1',
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        interaction: { intersect: false, mode: 'index' },
+                        scales: {
+                            y: { type: 'linear', position: 'left', title: { display: true, text: 'Tool Calls' } },
+                            y1: { type: 'linear', position: 'right', title: { display: true, text: 'Tokens' }, grid: { drawOnChartArea: false } },
+                        }
+                    }
+                });
+            }
+
+            async function loadDocs() {
+                try {
+                    const r = await fetch('/v1/documents');
+                    const d = await r.json();
+                    const el = document.getElementById('docList');
+                    if (!d.documents || d.documents.length === 0) {
+                        el.innerHTML = '<div class="empty">No documents uploaded yet. Use POST /v1/documents to upload.</div>';
+                        return;
+                    }
+                    let html = '<table><tr><th>ID</th><th>Title</th><th>Status</th><th>Chunks</th><th>Created</th><th>Actions</th></tr>';
+                    for (const doc of d.documents) {
+                        html += `<tr>
+                            <td><code>${doc.id}</code></td>
+                            <td>${doc.title}</td>
+                            <td><span class="status status-${doc.status}">${doc.status}</span></td>
+                            <td>-</td>
+                            <td>${new Date(doc.created_at).toLocaleDateString()}</td>
+                            <td>
+                                <button class="btn btn-primary" onclick="viewEntities('${doc.id}','${doc.title}')">Entities</button>
+                                <button class="btn btn-danger" onclick="deleteDoc('${doc.id}')">Delete</button>
+                            </td>
+                        </tr>`;
+                    }
+                    html += '</table>';
+                    el.innerHTML = html;
+                } catch(e) { console.error(e); }
+            }
+
+            async function viewEntities(docId, title) {
+                const panel = document.getElementById('entityPanel');
+                const list = document.getElementById('entityList');
+                document.getElementById('entityDocName').textContent = title;
+                panel.style.display = 'block';
+                list.innerHTML = '<div class="empty">Loading...</div>';
+                try {
+                    const r = await fetch('/v1/documents/' + docId + '/entities');
+                    const d = await r.json();
+                    if (!d.entities || d.entities.length === 0) {
+                        list.innerHTML = '<div class="empty">No entities found for this document.</div>';
+                        return;
+                    }
+                    const grouped = {};
+                    for (const e of d.entities) {
+                        if (!grouped[e.type]) grouped[e.type] = [];
+                        grouped[e.type].push(e.name);
+                    }
+                    let html = '';
+                    for (const [type, names] of Object.entries(grouped)) {
+                        html += '<div style="margin-bottom:8px;"><strong style="text-transform:uppercase;font-size:12px;color:#6b7280;">' + type + ' (' + names.length + ')</strong><div class="entity-grid">';
+                        for (const name of names) {
+                            html += '<span class="entity-tag entity-' + type + '">' + name + '</span>';
+                        }
+                        html += '</div></div>';
+                    }
+                    if (d.relations && d.relations.length > 0) {
+                        html += '<h3 style="margin-top:16px;font-size:14px;color:#374151;">Relations (' + d.relations.length + ')</h3><table style="margin-top:8px;"><tr><th>From</th><th>Relation</th><th>To</th></tr>';
+                        for (const rel of d.relations) {
+                            html += '<tr><td>' + rel.from_name + '</td><td><code>' + rel.relation + '</code></td><td>' + rel.to_name + '</td></tr>';
+                        }
+                        html += '</table>';
+                    }
+                    list.innerHTML = html;
+                } catch(e) { list.innerHTML = '<div class="empty">Error loading entities.</div>'; }
+            }
+
+            async function deleteDoc(docId) {
+                if (!confirm('Delete document ' + docId + '?')) return;
+                try {
+                    await fetch('/v1/documents/' + docId, { method: 'DELETE' });
+                    loadDocs();
+                    document.getElementById('entityPanel').style.display = 'none';
+                } catch(e) { alert('Delete failed: ' + e.message); }
+            }
+
             loadStats();
+            loadDocs();
             setInterval(loadStats, 30000);
         </script>
     </body>
