@@ -1,0 +1,28 @@
+{
+  "task": "code_audit",
+  "description": "Identify anti-patterns and bugs in Python code",
+  "ground_truth": [
+    {"pattern": "mutable_default_argument", "line": 32, "severity": "high", "description": "Config __init__ uses mutable default dict"},
+    {"pattern": "global_state_mutation", "line": 16, "severity": "medium", "description": "Global _config_cache mutated in load()"},
+    {"pattern": "thread_unsafe_singleton", "line": 53, "severity": "high", "description": "get_config() not thread-safe"},
+    {"pattern": "bare_except", "line": 62, "severity": "medium", "description": "Bare except clause catches all exceptions"},
+    {"pattern": "sql_injection", "line": 69, "severity": "critical", "description": "SQL query uses f-string formatting"},
+    {"pattern": "n_plus_one_query", "line": 76, "severity": "high", "description": "DB query inside loop"},
+    {"pattern": "unbounded_cache", "line": 87, "severity": "medium", "description": "MemoryLeakCache has no eviction"},
+    {"pattern": "blocking_io_async", "line": 97, "severity": "high", "description": "time.sleep() in async function"},
+    {"pattern": "exception_swallowing", "line": 104, "severity": "medium", "description": "Silent failure in retry loop"},
+    {"pattern": "missing_validation", "line": 117, "severity": "high", "description": "No input validation on user data"},
+    {"pattern": "hardcoded_secrets", "line": 125, "severity": "critical", "description": "Secrets in source code"},
+    {"pattern": "blocking_io_event_loop", "line": 130, "severity": "high", "description": "Blocking file read"},
+    {"pattern": "race_condition", "line": 136, "severity": "high", "description": "Concurrent file write race"},
+    {"pattern": "recursive_no_guard", "line": 142, "severity": "medium", "description": "No negative number check"},
+    {"pattern": "duplicate_code", "line": 148, "severity": "low", "description": "calculate_tax_a and _b identical"}
+  ],
+  "total_anti_patterns": 15,
+  "severity_counts": {
+    "critical": 2,
+    "high": 8,
+    "medium": 4,
+    "low": 1
+  }
+}
