@@ -16,7 +16,7 @@ An MCP server that forces agents to operate with a tiny, ultra-fast context wind
 **The Goldfish Agent (Client)**: A LangGraph agent with a strict ~8k token context limit, explicitly prompted: "You have no long-term memory. Use your MCP tools to fetch the state of the world."
 
 **The MCP Server Interface**: Three tools exposed to the agent:
-- `fetch_entity_graph(query, depth, relation, page_token)` — structured entity/relationship retrieval with pagination
+- `fetch_entity_graph(query, relation, page_token, limit)` — structured entity/relationship retrieval with pagination
 - `compress_document(doc_id, focus_area, max_return_tokens)` — zero-copy compression with query-conditional focus
 - `commit_to_long_term_memory(key, insights)` — persist insights beyond summarization cycles
 
@@ -41,7 +41,7 @@ An MCP server that forces agents to operate with a tiny, ultra-fast context wind
 ## Access Model
 
 **Hybrid Open-Core + Hosted**:
-- **Hosted Free Tier**: `https://pager.example.com/mcp` — capped at 500k compressed tokens/day, 100 tool calls/hour, 50k vectors. Acts as live demo.
+- **Hosted Free Tier**: `https://pager.duckdns.org/mcp` — capped at 500k compressed tokens/day, 100 tool calls/hour. Acts as live demo.
 - **Self-Hosted (OSS)**: Full source on GitHub, `docker-compose.yml` brings up Postgres+pgvector, Redis, Ollama, MCP server, dashboard in minutes. No limits, user owns data and compute.
 
 ## Value Proposition

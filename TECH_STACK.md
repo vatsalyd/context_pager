@@ -107,7 +107,7 @@ CREATE POLICY tenant_isolation ON <table>
 **Connection Pattern (per request):**
 ```python
 async with pool.acquire() as conn:
-    await conn.execute("SET LOCAL app.tenant_id = $1", tenant_id)
+    await conn.execute("SET app.tenant_id = $1", tenant_id)
     # all subsequent queries auto-filtered by RLS
 ```
 
@@ -144,7 +144,7 @@ Returns MCP error `429 TOO_MANY_REQUESTS` with friendly message.
 | **Auth Scheme** | Bearer API keys (`pgr_xxx...`, 32 random bytes) | Simple, standard, works over HTTP |
 | **Key Storage** | `users` table: `hashed_api_key = SHA256(key)`, `api_key_prefix = key[:8]` for fast lookup | Prefix index for O(1) candidate fetch; full hash verify |
 | **Middleware** | Starlette HTTP middleware wrapping FastMCP | Extracts `Authorization: Bearer`, validates, sets `request.state.tenant_id`; FastMCP tools read via `ctx.request.state.tenant_id` |
-| **PG Session Variable** | `SET LOCAL app.tenant_id = $1` on connection acquire | RLS auto-filters all queries; zero leakage risk |
+| **PG Session Variable** | `SET app.tenant_id = $1` on connection acquire (session-level, due to asyncpg autocommit pool) | RLS auto-filters all queries; zero leakage risk |
 
 ---
 
@@ -153,9 +153,10 @@ Returns MCP error `429 TOO_MANY_REQUESTS` with friendly message.
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/v1/documents` | POST (multipart) | Upload document; returns `{doc_id, status: "processing"}` |
-| `/v1/documents/{id}` | GET | Check embedding/extraction status → `{status: "ready", chunks: N, entities: M}` |
 | `/v1/documents` | GET | List tenant's documents |
+| `/v1/documents/{id}` | GET | Check embedding/extraction status → `{status: "ready", chunks: N, entities: M}` |
 | `/v1/documents/{id}` | DELETE | Cascade delete doc + chunks + entities |
+| `/v1/documents/{id}/entities` | GET | List extracted entities and relations for a document |
 
 Async worker (in-process `asyncio` task) handles chunking + BGE-m3 embedding + entity extraction after upload.
 
@@ -165,12 +166,9 @@ Async worker (in-process `asyncio` task) handles chunking + BGE-m3 embedding + e
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/v1/api_keys` | POST | Issue new API key (max 3 per tenant) |
-| `/v1/api_keys/{id}` | DELETE | Revoke key |
-| `/v1/usage` | GET | Own usage stats (from `tenant_usage_daily`) |
+| `/v1/usage` | GET | Own usage stats (from `tenant_usage_daily` + live `audit_events`) |
 | `/v1/signup` | POST | Create tenant + first key |
-| `/v1/login` | POST | Email/password for dashboard (optional) |
-| `/v1/admin/tenants` | GET | Admin overview (all tenants' usage) |
+| `/v1/admin/rollup` | POST | Manually trigger audit-to-daily rollup |
 
 ---
 
@@ -199,9 +197,9 @@ Async worker (in-process `asyncio` task) handles chunking + BGE-m3 embedding + e
 
 | Environment | Composition |
 |-------------|-------------|
-| **Hosted Free Tier (Oracle VM)** | `docker-compose.yml`: postgres (pgvector/pgvector:pg16), redis:7-alpine, **ollama skipped** (`OLLAMA_ENABLED=false`), pager-mcp (FastMCP :8000), pager-dashboard (FastAPI :8501), caddy (443 → 8000/8501), keepalive-daemon (5% CPU loop + 5GB resident + 2-min curl public URL) |
-| **Self-Hosted Default** | Same compose, `OLLAMA_ENABLED=true` by default; user can override `DATABASE_URL`/`REDIS_URL` via `docker-compose.override.yml` |
-| **Backups** | Nightly `pg_dump \| gzip` → Oracle Object Storage (7-day retention); restore script documented |
+| **Hosted Free Tier (Oracle VM)** | `docker-compose.yml`: postgres (pgvector/pgvector:pg16), redis:7-alpine, pager-mcp (FastMCP :8000), pager-dashboard (FastAPI :8501), caddy (443 → 8000/8501). `OLLAMA_ENABLED=false`, keepalive in `production` profile. |
+| **Self-Hosted Default** | Same compose; env vars via `.env` for secrets. `ollama` in `self-host` profile — enable with `--profile self-host`. |
+| **Backups** | TBD — nightly `pg_dump \| gzip` → Object Storage (7-day retention) is documented target but not yet automated. |
 
 ---
 

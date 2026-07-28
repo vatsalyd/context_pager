@@ -48,6 +48,9 @@ Dashboard: `http://localhost:8501/dashboard/`
 |----------|--------|-------------|
 | `/v1/documents` | POST | Upload document for ingestion (multipart) |
 | `/v1/documents/{id}` | GET | Get document status and metadata |
+| `/v1/documents/{id}` | DELETE | Cascade delete document, chunks, and entities |
+| `/v1/documents/{id}/entities` | GET | List extracted entities and relations for a document |
+| `/v1/admin/rollup` | POST | Manually trigger audit event rollup |
 | `/v1/usage` | GET | Get usage statistics for current tenant |
 | `/v1/signup` | POST | Create user and get API key |
 | `/dashboard/` | GET | Web dashboard UI |
@@ -94,15 +97,11 @@ This starts all services:
 - **postgres**: PostgreSQL 16 with pgvector
 - **redis**: Redis 7 for caching
 - **pager-mcp**: MCP server on port 8000
-- **pager-dashboard**: Dashboard on port 8501
+- **pager-dashboard**: Dashboard (FastAPI) on port 8501
 
-### Oracle Cloud Always Free
+### Production Deployment
 
-1. Create Ampere A1 VM (4 OCPU / 24 GB RAM)
-2. Install Docker + Docker Compose
-3. `docker-compose up -d`
-4. Configure DuckDNS + Caddy for TLS
-5. Add keepalive daemon to defeat idle reclamation
+See [`CONTEXT.md` Section 11](./CONTEXT.md#11-deployment-oracle-vm--self-host) for full deployment guide including Oracle Cloud Always Free, Caddy TLS, keepalive daemon, and backup scripts.
 
 ## Key Features
 

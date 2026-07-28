@@ -148,10 +148,10 @@
 **Decision**: **Hybrid Open-Core + Hosted** (Option C). Open-source self-host via `docker-compose up`; small free hosted tier on Oracle VM as live demo + freemium entry. Future paid tier = monetization without re-architect.
 
 ### Q22 — Data Isolation
-**Decision**: **Shared schema + `tenant_id` column + Postgres RLS** (Option A1). Every table gets `tenant_id text NOT NULL`; RLS policy `tenant_isolation USING (tenant_id = current_setting('app.tenant_id'))`. Connection middleware runs `SET LOCAL app.tenant_id = '<hash>'` per request. Redis keys prefixed `pager:cache:{tenant_id}:...`.
+**Decision**: **Shared schema + `tenant_id` column + Postgres RLS** (Option A1). Every table gets `tenant_id text NOT NULL`; RLS policy `tenant_isolation USING (tenant_id = current_setting('app.tenant_id'))`. Connection middleware runs `SET app.tenant_id = '<hash>'` per request (session-level, due to asyncpg autocommit pool). Redis keys prefixed `pager:cache:{tenant_id}:...`.
 
 ### Q23 — Authentication
-**Decision**: **Bearer API keys (`pgr_xxx`, 32 random bytes, SHA-256 stored with prefix index)** validated in **Starlette HTTP middleware wrapping FastMCP**. Middleware extracts bearer, validates, sets `request.state.tenant_id`, asyncpg connection runs `SET LOCAL app.tenant_id`. API keys issued via web signup (`/v1/signup`), CLI (`pager signup`), or admin script.
+**Decision**: **Bearer API keys (`pgr_xxx`, 32 random bytes, SHA-256 stored with prefix index)** validated in **Starlette HTTP middleware wrapping FastMCP**. Middleware extracts bearer, validates, sets `request.state.tenant_id`, asyncpg connection runs `SET app.tenant_id` (session-level). API keys issued via web signup (`/v1/signup`), CLI (`pager signup`), or admin script.
 
 ### Q24 — Rate Limiting
 **Decision**: **Redis leaky-bucket (sliding window)** per `(tenant_id, resource)`. Free tier caps:
@@ -193,7 +193,7 @@ Returns MCP `429 TOO_MANY_REQUESTS` with friendly message.
 ### Q32 — Backward Compatibility
 **Decision**: 
 1. **Goldfish agent** kept as `examples/goldfish_agent/` with `langgraph.json` — reference "Hello World" for self-hosters.
-2. **Self-host `docker-compose up` = zero-config** (bundles Postgres, Redis, MCP server, Dashboard, optional Ollama). `docker-compose.override.yml` documents pointing at external infra.
+2. **Self-host `docker-compose up` = zero-config** (bundles Postgres, Redis, MCP server, Dashboard, optional Ollama). Env vars in `.env` configure external infra; no override file needed.
 
 ---
 
@@ -860,7 +860,7 @@ Budget: You may make at most 50 tool calls per task. On the 50th, you MUST summa
 ## 10. Benchmark Suite (3 Tasks + Ground Truth)
 
 ### 10.1 Code Audit Task
-- **Fixture**: `tests/fixtures/generate_codebase.py` → `tests/fixtures/code_audit.py` (exactly 10,000 lines)
+- **Fixture**: `tests/fixtures/code_audit.py` (10,000 lines, hand-authored with planted issues)
 - **Planted Anti-Patterns** (15 total):
   1. N+1 DB query in loop (lines 1240-1260)
   2. Mutable default argument `def foo(items=[])` (line 342)
@@ -880,22 +880,23 @@ Budget: You may make at most 50 tool calls per task. On the 50th, you MUST summa
 - **Ground Truth**: `tests/fixtures/code_audit_ground_truth.json` — list of `{pattern, line_number, severity}`
 
 ### 10.2 Financial Reports Task
-- **Fixtures**: 3 PDFs in `tests/fixtures/financial/` (hand-authored LaTeX → PDF)
-  - `acme_corp_2023.pdf` (42 pp)
-  - `globex_2023.pdf` (38 pp)
-  - `initech_2023.pdf` (47 pp)
+- **Fixtures**: 1 `.txt` file in `tests/fixtures/financial/`:
+  - `acme_corp_2024.txt` (hand-authored annual report)
+  - *Planned: globex + initech reports; only acme_corp implemented*
 - **KPIs per report** (15 each):
   - Revenue, Net Income, EPS (Basic/Diluted), Gross Margin, Operating Margin
   - Debt/Equity, Current Ratio, Free Cash Flow, CapEx, R&D Spend
   - Segments: Revenue by geography, Revenue by product line
   - Guidance: Next quarter revenue estimate, FY outlook
-- **Ground Truth**: `tests/fixtures/financial_ground_truth.json` — `{company, kpi, value, page_ref}`
+- **Ground Truth**: `tests/fixtures/financial_ground_truth.json` — `{company, kpi, value, page_ref}` (not yet created)
 
 ### 10.3 Meeting Transcripts Task
-- **Fixtures**: 3 `.txt` files in `tests/fixtures/transcripts/` (~15-20k tokens each)
+- **Fixtures**: 1 `.txt` file in `tests/fixtures/transcripts/` (~15-20k tokens)
+  - `q3_strategy_review.txt`
+  - *Planned: 2 more transcripts; only q3_strategy_review implemented*
 - **Planted PII**: Names, emails, phones, SSNs, addresses
-- **Decisions List**: 8-10 explicit decisions per transcript
-- **Ground Truth**: `tests/fixtures/transcripts_ground_truth.json` — `{pii_count_by_type, decisions}`
+- **Decisions List**: 8 explicit decisions
+- **Ground Truth**: `tests/fixtures/transcripts_ground_truth.json` — `{pii_count_by_type, decisions}` (not yet created)
 
 ### 10.4 Benchmark Runner
 ```python
@@ -926,120 +927,14 @@ async def run_benchmark():
 ## 11. Deployment (Oracle VM + Self-Host)
 
 ### 11.1 `docker-compose.yml` (Single File, Zero-Config Start)
-```yaml
-version: "3.9"
 
-services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    environment:
-      POSTGRES_DB: pager
-      POSTGRES_USER: pager
-      POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
-    volumes:
-      - pg_data:/var/lib/postgresql/data
-      - ./migrations:/docker-entrypoint-initdb.d:ro
-    secrets:
-      - pg_password
-    healthcheck: ["CMD-SHELL", "pg_isready -U pager -d pager"]
+See [`docker-compose.yml`](docker-compose.yml) in the repo root for the authoritative deployment config. Key structural decisions:
 
-  redis:
-    image: redis:7-alpine
-    volumes:
-      - redis_data:/data
-    healthcheck: ["CMD", "redis-cli", "ping"]
-
-  ollama:
-    image: ollama/ollama:latest
-    profiles: ["self-host"]  # excluded by default on free tier
-    volumes:
-      - ollama_data:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-
-  pager-mcp:
-    build:
-      context: .
-      dockerfile: Dockerfile.mcp
-    environment:
-      - DATABASE_URL=postgresql://pager:${PG_PASSWORD}@postgres:5432/pager
-      - REDIS_URL=redis://redis:6379/0
-      - OLLAMA_URL=http://ollama:11434
-      - OLLAMA_ENABLED=${OLLAMA_ENABLED:-false}
-      - LOG_LEVEL=INFO
-    ports:
-      - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          memory: 4G
-
-  pager-dashboard:
-    build:
-      context: .
-      dockerfile: Dockerfile.dashboard
-    environment:
-      - DATABASE_URL=postgresql://pager:${PG_PASSWORD}@postgres:5432/pager
-      - REDIS_URL=redis://redis:6379/0
-      - SECRET_KEY_FILE=/run/secrets/secret_key
-    ports:
-      - "8501:8501"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    secrets:
-      - secret_key
-
-  caddy:
-    image: caddy:2-alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - pager-mcp
-      - pager-dashboard
-
-  keepalive:
-    build:
-      context: .
-      dockerfile: Dockerfile.keepalive
-    environment:
-      - PUBLIC_URL=https://pager.duckdns.org  # or custom domain
-    deploy:
-      resources:
-        limits:
-          cpus: "0.2"   # ~5% of 4 OCPU
-          memory: 5G    # 5 GB resident block
-
-volumes:
-  pg_data:
-  redis_data:
-  ollama_data:
-  caddy_data:
-  caddy_config:
-
-secrets:
-  pg_password:
-    file: ./secrets/pg_password.txt
-  secret_key:
-    file: ./secrets/secret_key.txt
-```
+- **Env vars over secrets**: All secrets pass through environment variables (`.env` file) rather than Docker `secrets:` — avoids Swarm-only syntax; works on `docker compose up` out of the box
+- **Profiles**: `ollama` (with GPU reservation) is behind `--profile self-host`; `keepalive` is behind `--profile production`
+- **Health checks**: Postgres, Redis, MCP server, and dashboard all have health checks with `depends_on: condition: service_healthy`
+- **Shared HF cache**: `hf_cache` volume shared between MCP server and dashboard to avoid re-downloading BGE-m3
+- **CPU-only torch**: `TRANSFORMERS_NO_CUDA=1`, `CUDA_VISIBLE_DEVICES=""` set on all services; `pyproject.toml` pins `torch>=2.0.0` (CPU index via `[tool.uv.sources]`)
 
 ### 11.2 `Caddyfile`
 ```caddyfile
@@ -1048,7 +943,7 @@ secrets:
 }
 
 pager.duckdns.org {
-    reverse_proxy /mcp/* pager-mcp:8000
+    reverse_proxy /mcp pager-mcp:8000
     reverse_proxy /dashboard/* pager-dashboard:8501
     reverse_proxy /v1/* pager-dashboard:8501
     reverse_proxy /healthz pager-dashboard:8501
@@ -1091,22 +986,23 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-### 11.4 Self-Host Override (`.env` + `docker-compose.override.yml`)
-```yaml
-# docker-compose.override.yml (user creates)
-version: "3.9"
-services:
-  postgres:
-    image: postgres:16  # or their managed PG
-    environment:
-      POSTGRES_DB: pager
-    # user supplies their own DATABASE_URL via .env
+### 11.4 Configuration Override
 
-  ollama:
-    profiles: ["self-host"]  # enable with --profile self-host
-```
+Configuration is handled via environment variables in `.env` (copied from `.env.example`). Key overridable variables:
 
-### 11.5 Nightly Backup (systemd timer on Oracle VM or cron in keepalive container)
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `POSTGRES_PASSWORD` | `changeme` | Database password |
+| `DATABASE_URL` | (auto-built) | Full connection string for external PG |
+| `REDIS_URL` | `redis://redis:6379/0` | External Redis |
+| `OLLAMA_ENABLED` | `false` | Enable `--profile self-host` Ollama |
+| `SECRET_KEY` | `change-this-in-production` | Dashboard session key |
+
+Self-hosters pointing at managed Postgres set `DATABASE_URL` directly in `.env` and remove the `postgres` service from compose via a custom override.
+
+### 11.5 Nightly Backup (Target Design — Not Yet Implemented)
+
+Target design for production deployment:
 ```bash
 #!/bin/bash
 # backup.sh
@@ -1115,12 +1011,15 @@ pg_dump -h localhost -U pager -d pager | gzip > /backups/pager_${DATE}.sql.gz
 oci os object put -bn pager-backups --file /backups/pager_${DATE}.sql.gz --name pager_${DATE}.sql.gz
 # Retain 7 days
 find /backups -name "pager_*.sql.gz" -mtime +7 -delete
-oci os object list -bn pager-backups --query "data[?timeCreated < '$(date -d '7 days ago' -Iseconds)'].name" | xargs -I {} oci os object delete -bn pager-backups --name {}
 ```
+
+Requires Oracle OCI CLI + Object Storage bucket. Script lives in `/scripts/backup/` when created.
 
 ---
 
 ## 12. Phase Plan (22 Days)
+
+> **Status**: Phases 0–14 complete as of commit `68614cb`. Phase 13 (Oracle Deploy) deferred pending cloud account. See git log for full implementation history.
 
 | Phase | Days | Deliverable |
 |-------|------|-------------|
