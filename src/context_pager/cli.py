@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import click
 
 
@@ -41,7 +43,8 @@ def docs_add(file: str, kind: str) -> None:
     """Register a file: copy into the library, chunk, embed, index."""
     from context_pager.core.tools import add_document
 
-    add_document(file, kind=kind)
+    doc_id = asyncio.run(add_document(file, kind=kind))
+    click.echo(f"added {file} → doc_id={doc_id}")
 
 
 @docs.command("list")
@@ -51,7 +54,7 @@ def docs_list() -> None:
 
     with open_library() as lib:
         for row in lib.list_documents():
-            print(
+            click.echo(
                 f"{row['doc_id']}\t{row['title']}\t"
                 f"{row['kind']}\tchunks={row['chunks']}\tindexed={row['indexed_at']}"
             )
@@ -63,7 +66,8 @@ def docs_reindex(doc_id: str) -> None:
     """Re-chunk + re-embed a document, keeping the same doc_id."""
     from context_pager.core.tools import reindex_document
 
-    reindex_document(doc_id)
+    asyncio.run(reindex_document(doc_id))
+    click.echo(f"reindexed {doc_id}")
 
 
 @docs.command("remove")
@@ -73,6 +77,7 @@ def docs_remove(doc_id: str) -> None:
     from context_pager.core.tools import remove_document
 
     remove_document(doc_id)
+    click.echo(f"removed {doc_id}")
 
 
 @main.command()
