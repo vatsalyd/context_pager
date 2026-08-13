@@ -1,0 +1,10 @@
+# Context Pager relay — Caddy reverse proxy with automatic TLS (HTTP-01).
+# The relay itself binds 0.0.0.0:8000 (uvicorn); Caddy fronts it on 80/443.
+
+pager.duckdns.org {
+    encode gzip
+
+    reverse_proxy 127.0.0.1:8000 {
+        flush_interval -1
+    }
+}

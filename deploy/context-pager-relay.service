@@ -1,0 +1,23 @@
+[Unit]
+Description=Context Pager Relay (thin MCP router + bridge WSS)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pager
+Group=pager
+WorkingDirectory=/etc/context-pager
+EnvironmentFile=/etc/context-pager/.env
+ExecStart=/opt/context-pager/venv/bin/pager serve
+Restart=always
+RestartSec=5
+# uvicorn runs in-process; no extra workers.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/etc/context-pager /var/backups/context-pager
+
+[Install]
+WantedBy=multi-user.target
