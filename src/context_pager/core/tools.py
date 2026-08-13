@@ -235,8 +235,17 @@ async def compress_document(
         cache_key_page = page if page_order is None else page_order[page - 1]
         cached = _page_cache.get(doc_id, cache_key_page, max_return_tokens)
         if cached:
+            # Content is cached per resolved page; request-specific fields are
+            # rewritten so focus and sequential calls share the cache safely.
+            cached["page"] = page
+            cached["pages_total"] = pages_total
+            cached["next_page"] = page + 1 if page < pages_total else None
             cached["metadata"]["cache_hit"] = True
             cached["metadata"]["elapsed_ms"] = int((time.time() - start) * 1000)
+            if focused:
+                cached["metadata"]["focus_applied"] = True
+            else:
+                cached["metadata"].pop("focus_applied", None)
             return json.dumps(cached)
 
         raw_text = "\n\n".join(page_chunks)

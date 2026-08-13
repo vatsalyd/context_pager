@@ -122,6 +122,32 @@ async def test_focus_area_reranks_pages(settings, models, tmp_path):
     assert "engineering" in env["content"] or "infrastructure" in env["content"]
 
 
+async def test_focus_cache_preserves_page_fields(settings, models, tmp_path):
+    text = (
+        "Page about revenue and sales growth. " * 200
+        + "Page about marketing and brand. " * 200
+        + "Page about engineering and infrastructure. " * 200
+    )
+    file = _write_fixture(tmp_path, "focused_cache.txt", text)
+    doc_id = await add_document(file, settings=settings, models=models)
+
+    pages = []
+    for i in range(1, json.loads(await compress_document(doc_id, page=1, settings=settings, models=models))["pages_total"] + 1):
+        pages.append(json.loads(await compress_document(doc_id, page=i, settings=settings, models=models)))
+
+    focused = json.loads(
+        await compress_document(doc_id, page=1, focus_area="engineering infrastructure", settings=settings, models=models)
+    )
+    assert focused["metadata"].get("focus_applied") is True
+
+    resolved = next(i for i, p in enumerate(pages, start=1) if p["content"] == focused["content"])
+    seq = json.loads(await compress_document(doc_id, page=resolved, settings=settings, models=models))
+    assert seq["metadata"]["cache_hit"] is True
+    assert seq["page"] == resolved
+    assert seq["content"] == focused["content"]
+    assert "focus_applied" not in seq["metadata"]
+
+
 async def test_commit_and_recall_memory(settings, models):
     await commit_to_long_term_memory("acme_q3", "Acme revenue hit 42M in Q3.", settings=settings, models=models)
     env = json.loads(await search_documents("acme q3 revenue", settings=settings, models=models))
