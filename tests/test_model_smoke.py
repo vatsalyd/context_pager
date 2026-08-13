@@ -56,6 +56,9 @@ def env(tmp_path_factory):
         PAGER_DB=str(base / "pager.db"),
         PAGER_TELEMETRY_DB=str(base / "telemetry.db"),
         PAGER_LITE=not FULL,
+        # Budget below page size so compression (LLMLingua/truncation) runs,
+        # instead of taking the short-circuit path every call.
+        PAGER_MAX_RETURN_TOKENS=512,
     )
     return settings, Models(settings)
 

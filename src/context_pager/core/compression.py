@@ -19,16 +19,20 @@ class LLMLinguaCompressor:
     def __init__(self, model_name: str):
         from llmlingua import PromptCompressor
 
-        self._model = PromptCompressor(model_name=model_name, use_llmlingua2=True)
+        import torch
+
+        # llmlingua defaults device_map to "cuda" and crashes on CPU-only boxes;
+        # the bridge runs on the user's laptop, so default to CPU unless CUDA is real.
+        device_map = "cuda" if torch.cuda.is_available() else "cpu"
+        self._model = PromptCompressor(model_name=model_name, use_llmlingua2=True, device_map=device_map)
 
     async def compress(self, text: str, target_tokens: int) -> str:
-        rate = min(target_tokens / max(count_tokens(text), 1), 1.0)
+        # llmlingua-2 takes target_token as the max output; it overrides rate.
         return await _run_in_executor(
             lambda: self._model.compress_prompt(
                 text,
-                rate=rate,
+                target_token=target_tokens,
                 force_tokens=["\n", "?", "!"],
-                use_llmlingua2=True,
             )["compressed_prompt"]
         )
 
