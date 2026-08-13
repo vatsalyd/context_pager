@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "context-pager"
-version = "0.2.0"
+version = "0.3.0"
 description = "Context Pager: a context-paging MCP server that cuts agent token cost"
 readme = "README.md"
 license = {text = "MIT"}

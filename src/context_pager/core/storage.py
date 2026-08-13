@@ -10,6 +10,10 @@ from typing import Any, Iterator
 
 import sqlite_vec
 
+# A page is a fixed window of this many chunks (Q13). Independent of the token
+# budget: pages stay canonical so search best_page remains valid across calls.
+CHUNKS_PER_PAGE = 4
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS docs (
     doc_id TEXT PRIMARY KEY,
@@ -273,7 +277,10 @@ def open_library(settings=None) -> Iterator[Library]:
     from context_pager.core.embedder import dim_for
 
     settings = settings or get_bridge_settings()
-    chunks_per_page = max(1, settings.max_return_tokens // settings.chunk_tokens)
+    # Pages are canonical (Q13): a fixed chunk window regardless of the token
+    # budget, so `best_page` from search stays valid and `max_return_tokens`
+    # controls how hard to compress a page rather than how it's sized.
+    chunks_per_page = CHUNKS_PER_PAGE
     lib = Library(expand(settings.db_path), dim_for(settings), chunks_per_page)
     try:
         yield lib
