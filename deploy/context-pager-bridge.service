@@ -1,0 +1,22 @@
+# Example: run the laptop bridge as a Linux user service.
+# Copy to ~/.config/systemd/user/context-pager-bridge.service, then:
+#   systemctl --user daemon-reload && systemctl --user enable --now context-pager-bridge
+#
+# The bridge must be able to download ~2GB of model weights on first run; run
+# `pager bridge` once manually (or set PAGER_LITE=true) before enabling.
+# Models are cached under ~/.cache (torch/huggingface).
+
+[Unit]
+Description=Context Pager Bridge (models + localhost MCP + WSS relay channel)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/path/to/venv/bin/pager bridge
+Restart=always
+RestartSec=10
+EnvironmentFile=%h/.pager/bridge.env
+
+[Install]
+WantedBy=default.target
