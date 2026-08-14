@@ -2,10 +2,14 @@
 # Idempotent provisioning of the Context Pager relay on an AWS t3.micro (Ubuntu 22.04/24.04).
 # Free tier: ~$0/mo. Zero ML. No Docker — bare venv + systemd + Caddy (Q26).
 #
-# Requirements (env): PAGER_DUCKDNS_DOMAIN (e.g. "pager"), PAGER_DUCKDNS_TOKEN,
-#   and optionally PAGER_S3_BUCKET (e.g. "my-bucket") for backups.
-# The package spec defaults to PyPI; point PAGER_PIP_REF at a local repo until published:
-#   PAGER_PIP_REF="git+https://github.com/vatsalyd/context_pager.git@main#egg=context-pager[relay]"
+# Run from a clone of this repo so the companion files are found:
+#   git clone https://github.com/vatsalyd/context_pager.git
+#   cd context_pager && sudo PAGER_DUCKDNS_DOMAIN=pager PAGER_DUCKDNS_TOKEN=xxxx bash deploy/setup_relay.sh
+#
+# Requirements (env): PAGER_DUCKDNS_DOMAIN (subdomain, no .duckdns.org), PAGER_DUCKDNS_TOKEN,
+#   optionally PAGER_S3_BUCKET for S3 backups.
+# The package is installed from the repo clone (deploy/../..) when present; otherwise from
+# $PAGER_PIP_REF, which defaults to PyPI (`context-pager[relay]`) once published.
 #
 # Re-running the script is safe: everything is guarded to be idempotent.
 set -euo pipefail
@@ -14,6 +18,9 @@ DOMAIN="${PAGER_DUCKDNS_DOMAIN:?set PAGER_DUCKDNS_DOMAIN (subdomain, no .duckdns
 DUCKDNS_TOKEN="${PAGER_DUCKDNS_TOKEN:?set PAGER_DUCKDNS_TOKEN}"
 PIP_REF="${PAGER_PIP_REF:-context-pager[relay]}"
 S3_BUCKET="${PAGER_S3_BUCKET:-}"
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 FQDN="$DOMAIN.duckdns.org"
 APP_USER="pager"
@@ -32,7 +39,7 @@ log() { echo "==> $*"; }
 log "installing base packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq python3-venv python3-pip sqlite3 curl ca-certificates gnupg apt-transport-https
+apt-get install -y -qq python3-venv python3-pip sqlite3 git curl ca-certificates gnupg apt-transport-https
 
 # ── Caddy (auto-TLS via HTTP-01) ──────────────────────────────
 if ! command -v caddy >/dev/null 2>&1; then
@@ -44,11 +51,19 @@ if ! command -v caddy >/dev/null 2>&1; then
 fi
 
 log "installing Caddyfile"
-if [[ -f "Caddyfile" ]]; then
-    install -m 0644 Caddyfile /etc/caddy/Caddyfile
+if [[ -f "$SCRIPT_DIR/Caddyfile" ]]; then
+    sed "s/pager\.duckdns\.org/$FQDN/" "$SCRIPT_DIR/Caddyfile" > /etc/caddy/Caddyfile
 else
-    sed "s/pager\.duckdns\.org/$FQDN/" "$(dirname "$0")/Caddyfile" | install -m 0644 /dev/stdin /etc/caddy/Caddyfile
+    cat > /etc/caddy/Caddyfile <<EOF
+$FQDN {
+    encode gzip
+    reverse_proxy 127.0.0.1:8000 {
+        flush_interval -1
+    }
+}
+EOF
 fi
+chmod 0644 /etc/caddy/Caddyfile
 systemctl enable --now caddy
 systemctl reload caddy
 
@@ -62,8 +77,13 @@ if [[ ! -x "$VENV_DIR/bin/pager" ]]; then
     install -d -o "$APP_USER" -g "$APP_USER" /opt/context-pager
     python3 -m venv "$VENV_DIR"
     "$VENV_DIR/bin/pip" install --upgrade pip
-    log "installing $PIP_REF (first run pulls the relay stack; may take a minute)"
-    "$VENV_DIR/bin/pip" install "$PIP_REF"
+    if [[ -f "$REPO_DIR/pyproject.toml" ]]; then
+        log "installing relay stack from repo clone $REPO_DIR"
+        "$VENV_DIR/bin/pip" install "$REPO_DIR[relay]"
+    else
+        log "installing $PIP_REF (first run pulls the relay stack; may take a minute)"
+        "$VENV_DIR/bin/pip" install "$PIP_REF"
+    fi
 fi
 
 # ── relay env (only written once so admin tweaks persist) ─────
@@ -88,20 +108,64 @@ fi
 
 # ── systemd unit ──────────────────────────────────────────────
 log "installing systemd unit"
-if [[ -f "context-pager-relay.service" ]]; then
-    install -m 0644 context-pager-relay.service /etc/systemd/system/context-pager-relay.service
+if [[ -f "$SCRIPT_DIR/context-pager-relay.service" ]]; then
+    install -m 0644 "$SCRIPT_DIR/context-pager-relay.service" /etc/systemd/system/context-pager-relay.service
 else
-    install -m 0644 "$(dirname "$0")/context-pager-relay.service" /etc/systemd/system/context-pager-relay.service
+    cat > /etc/systemd/system/context-pager-relay.service <<EOF
+[Unit]
+Description=Context Pager Relay (thin MCP router + bridge WSS)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$APP_USER
+Group=$APP_USER
+WorkingDirectory=$APP_DIR
+EnvironmentFile=$APP_DIR/.env
+ExecStart=$VENV_DIR/bin/pager serve
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=$APP_DIR $BACKUP_DIR
+
+[Install]
+WantedBy=multi-user.target
+EOF
 fi
 systemctl daemon-reload
 systemctl enable --now context-pager-relay
 
 # ── nightly backup (7-day retention, optional S3) ─────────────
 log "installing backup script"
-if [[ -f "backup.sh" ]]; then
-    install -m 0755 backup.sh /usr/local/bin/context-pager-backup
+if [[ -f "$SCRIPT_DIR/backup.sh" ]]; then
+    install -m 0755 "$SCRIPT_DIR/backup.sh" /usr/local/bin/context-pager-backup
 else
-    install -m 0755 "$(dirname "$0")/backup.sh" /usr/local/bin/context-pager-backup
+    cat > /usr/local/bin/context-pager-backup <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+DB_DIR="${PAGER_DB_DIR:-/etc/context-pager}"
+BACKUP_DIR="${PAGER_BACKUP_DIR:-/var/backups/context-pager}"
+RETENTION_DAYS="${PAGER_BACKUP_RETENTION_DAYS:-7}"
+S3_BUCKET="${PAGER_S3_BUCKET:-}"
+AWS_BIN="${PAGER_AWS_BIN:-aws}"
+[[ -f /etc/context-pager/backup.env ]] && . /etc/context-pager/backup.env
+mkdir -p "$BACKUP_DIR"
+for db in users.db; do
+    if [[ ! -f "$DB_DIR/$db" ]]; then
+        continue
+    fi
+    sqlite3 "$DB_DIR/$db" ".backup '$BACKUP_DIR/$db.$(date +%F).bak'"
+done
+find "$BACKUP_DIR" -name '*.bak' -mtime "+$RETENTION_DAYS" -delete
+if [[ -n "$S3_BUCKET" ]]; then
+    "$AWS_BIN" s3 sync "$BACKUP_DIR" "s3://$S3_BUCKET/context-pager/" --delete --quiet
+fi
+EOF
+    chmod 0755 /usr/local/bin/context-pager-backup
 fi
 ( crontab -l 2>/dev/null | grep -q context-pager-backup ) || \
     ( crontab -l 2>/dev/null; echo "30 2 * * * /usr/local/bin/context-pager-backup" ) | crontab -
