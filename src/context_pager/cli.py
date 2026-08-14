@@ -44,7 +44,7 @@ def docs_add(file: str, kind: str) -> None:
     from context_pager.core.tools import add_document
 
     doc_id = asyncio.run(add_document(file, kind=kind))
-    click.echo(f"added {file} → doc_id={doc_id}")
+    click.echo(f"added {file} -> doc_id={doc_id}")
 
 
 @docs.command("list")
