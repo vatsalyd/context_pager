@@ -34,7 +34,10 @@ jobs:
 
       - uses: astral-sh/setup-uv@v5
 
-      - run: uv publish --publish-url https://test.pypi.org/legacy/ --trusted-publishing always dist/*
+      # First publish uses API token (project must exist before Trusted Publisher works).
+      # After this run, configure Trusted Publisher on test.pypi.org and switch to:
+      #   uv publish --publish-url https://test.pypi.org/legacy/ --trusted-publishing always dist/*
+      - run: uv publish --publish-url https://test.pypi.org/legacy/ --token ${{ secrets.TESTPYPI_API_TOKEN }} dist/*
 
   publish-pypi:
     needs: publish-testpypi
@@ -50,4 +53,5 @@ jobs:
 
       - uses: astral-sh/setup-uv@v5
 
-      - run: uv publish --trusted-publishing always dist/*
+      # Same as above — switch to --trusted-publishing always after first publish.
+      - run: uv publish --token ${{ secrets.PYPI_API_TOKEN }} dist/*
