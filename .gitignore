@@ -41,3 +41,6 @@ secrets/
 
 # Docker
 .docker/
+
+# Internal docs (NEVER commit)
+TECHNICAL_DEEP_DIVE.md

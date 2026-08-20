@@ -603,14 +603,13 @@ wheels = [
 
 [[package]]
 name = "context-pager"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
-    { name = "sqlite-vec" },
 ]
 
 [package.optional-dependencies]
@@ -667,7 +666,6 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.3.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "spacy", marker = "extra == 'bridge'", specifier = ">=3.7.0" },
-    { name = "sqlite-vec", specifier = ">=0.1.4" },
     { name = "sqlite-vec", marker = "extra == 'bridge'", specifier = ">=0.1.4" },
     { name = "tiktoken", marker = "extra == 'bridge'", specifier = ">=0.7.0" },
     { name = "torch", marker = "extra == 'bridge'", specifier = ">=2.0", index = "https://download.pytorch.org/whl/cpu" },
