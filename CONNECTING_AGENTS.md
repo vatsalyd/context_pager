@@ -1,37 +1,26 @@
 # Connecting Agents
 
 Every agent config is the same shape: **one MCP URL + one bearer token**
-(`pgr_agent_*`). Point it at the relay (`https://pager.duckdns.org/mcp`) for remote
-use, or at your laptop bridge (`http://127.0.0.1:8000/mcp`, no auth) for local-only.
+(`pgr_agent_*`). Point it at the relay (`https://context-pager.duckdns.org/mcp`)
+for remote use, or at your laptop bridge (`http://127.0.0.1:8000/mcp`, no auth)
+for local-only.
 
 ## Get keys
 
-1. Get the relay's public URL (default `https://pager.duckdns.org`).
+1. Get the relay's public URL (default `https://context-pager.duckdns.org`).
 2. `POST /v1/signup` once per user:
    ```bash
-   curl -X POST https://pager.duckdns.org/v1/signup
+   curl -X POST https://context-pager.duckdns.org/v1/signup
    # {"user_id":"...","agent_key":"pgr_agent_...","bridge_key":"pgr_bridge_...",...}
    ```
 3. Put `agent_key` in your MCP config below; put `bridge_key` in the bridge's env
    (`PAGER_BRIDGE_KEY`) so it can relay.
 
-## Claude Code
+## Claude Desktop
 
-`.mcp.json` (project root) or `claude mcp add`:
+Edit `claude_desktop_config.json` (Settings → Developer → Edit Config):
 
-```json
-{
-  "mcpServers": {
-    "pager": {
-      "type": "http",
-      "url": "https://pager.duckdns.org/mcp",
-      "headers": { "Authorization": "Bearer pgr_agent_..." }
-    }
-  }
-}
-```
-
-Local only (laptop bridge, no auth):
+**Local only** (no auth needed):
 
 ```json
 {
@@ -44,25 +33,111 @@ Local only (laptop bridge, no auth):
 }
 ```
 
+**With relay** (remote access):
+
+```json
+{
+  "mcpServers": {
+    "pager": {
+      "type": "http",
+      "url": "https://context-pager.duckdns.org/mcp",
+      "headers": { "Authorization": "Bearer pgr_agent_..." }
+    }
+  }
+}
+```
+
+## Claude Code
+
+CLI add:
+
+```bash
+claude mcp add pager --transport http http://127.0.0.1:8000/mcp
+```
+
+Or `.mcp.json` (project root):
+
+**Local only:**
+
+```json
+{
+  "mcpServers": {
+    "pager": {
+      "type": "http",
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}
+```
+
+**With relay:**
+
+```json
+{
+  "mcpServers": {
+    "pager": {
+      "type": "http",
+      "url": "https://context-pager.duckdns.org/mcp",
+      "headers": { "Authorization": "Bearer pgr_agent_..." }
+    }
+  }
+}
+```
+
 ## Cursor
 
 Settings → MCP → **Add new MCP server**:
 
-- Type: `http`
-- URL: `https://pager.duckdns.org/mcp`
-- Headers: `{ "Authorization": "Bearer pgr_agent_..." }`
+- **Name:** `pager`
+- **Type:** `http`
+- **URL:** `http://127.0.0.1:8000/mcp` (local) or `https://context-pager.duckdns.org/mcp` (relay)
+- **Headers:** `{ "Authorization": "Bearer pgr_agent_..." }` (relay mode only)
 
-## Any MCP client (raw)
+## OpenCode
+
+Add to `opencode.json` in your project root:
+
+**Local only:**
+
+```json
+{
+  "mcp": {
+    "pager": {
+      "type": "http",
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}
+```
+
+**With relay:**
+
+```json
+{
+  "mcp": {
+    "pager": {
+      "type": "http",
+      "url": "https://context-pager.duckdns.org/mcp",
+      "headers": { "Authorization": "Bearer pgr_agent_..." }
+    }
+  }
+}
+```
+
+## Any MCP client (raw HTTP)
 
 Streamable HTTP transport, bearer header:
 
 ```bash
-curl -X POST https://pager.duckdns.org/mcp \
+curl -X POST https://context-pager.duckdns.org/mcp \
   -H "Authorization: Bearer pgr_agent_..." \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"cli","version":"1.0"}}}'
 ```
+
+For local mode, replace the URL with `http://127.0.0.1:8000/mcp` and omit the
+`Authorization` header.
 
 ## Reference agent
 

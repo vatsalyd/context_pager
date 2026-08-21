@@ -17,7 +17,7 @@ class RelaySettings(BaseSettings):
     bridge_path: str = Field(default="/bridge", alias="PAGER_BRIDGE_PATH")
 
     sqlite_db: str = Field(default="users.db", alias="PAGER_SQLITE_DB")
-    public_url: str = Field(default="https://pager.duckdns.org", alias="PAGER_PUBLIC_URL")
+    public_url: str = Field(default="https://context-pager.duckdns.org", alias="PAGER_PUBLIC_URL")
 
     api_key_prefix: str = Field(default="pgr_", alias="PAGER_API_KEY_PREFIX")
     rate_limit_calls_per_hour: int = Field(default=100, alias="PAGER_RATE_LIMIT_CALLS_PER_HOUR")
@@ -37,7 +37,7 @@ class BridgeSettings(BaseSettings):
     telemetry_db: str = Field(default="~/.pager/telemetry.db", alias="PAGER_TELEMETRY_DB")
 
     bridge_key: str = Field(default="", alias="PAGER_BRIDGE_KEY")
-    relay_ws_url: str = Field(default="wss://pager.duckdns.org/bridge", alias="PAGER_BRIDGE_WS_URL")
+    relay_ws_url: str = Field(default="wss://context-pager.duckdns.org/bridge", alias="PAGER_BRIDGE_WS_URL")
 
     lite: bool = Field(default=False, alias="PAGER_LITE")
 

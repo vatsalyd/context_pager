@@ -31,7 +31,7 @@ Budget: You may make at most 50 tool calls per task. On the 50th, you MUST summa
 
 async def create_goldfish_agent():
     """Create and return a configured Goldfish agent."""
-    url = os.getenv("PAGER_MCP_URL", "https://pager.duckdns.org/mcp")
+    url = os.getenv("PAGER_MCP_URL", "https://context-pager.duckdns.org/mcp")
     headers = {}
     if api_key := os.getenv("PAGER_AGENT_KEY"):
         headers["Authorization"] = f"Bearer {api_key}"

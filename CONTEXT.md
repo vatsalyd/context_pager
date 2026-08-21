@@ -12,13 +12,13 @@ window and pull only the pages they need, the way an OS pages memory.
 ```
 ┌─────────────┐  MCP over HTTPS (bearer: pgr_agent_*)   ┌──────────────┐
 │    Agent    │ ───────────────────────────────────────► │   RELAY      │
-│ (Claude,    │  POST https://pager.duckdns.org/mcp      │ AWS t3.micro │
+│ (Claude,    │  POST https://context-pager.duckdns.org/mcp      │ AWS t3.micro │
 │  Cursor, …) │                                          │ dumb router  │
 └─────────────┘                                          │ $0/mo, 0 ML  │
                                                          │ SQLite: keys │
                         WSS (handshake: pgr_bridge_*)    │ + usage rollup│
 ┌─────────────┐  JSON-RPC   ───────────────────────────► │              │
-│   BRIDGE    │  wss://pager.duckdns.org/bridge          └──────────────┘
+│   BRIDGE    │  wss://context-pager.duckdns.org/bridge          └──────────────┘
 │   (laptop)  │ ◄───────────────────────────────────────
 │ models +    │
 │ sqlite-vec  │
@@ -123,7 +123,7 @@ timeout) — retry with backoff. `false` means permanent (bad key, missing doc, 
 | Variable | Used by | Default |
 |---|---|---|
 | `PAGER_BRIDGE_KEY` | bridge (WSS auth) | — (required to relay) |
-| `PAGER_BRIDGE_WS_URL` | bridge | `wss://pager.duckdns.org/bridge` |
+| `PAGER_BRIDGE_WS_URL` | bridge | `wss://context-pager.duckdns.org/bridge` |
 | `PAGER_LITE` | bridge | `false` (bge-small + truncation when `true`) |
 | `PAGER_ROOT` | bridge | `~/.pager/docs` |
 | `PAGER_DB` | bridge | `~/.pager/pager.db` |
@@ -134,7 +134,7 @@ timeout) — retry with backoff. `false` means permanent (bad key, missing doc, 
 | `PAGER_RELAY_HOST/PORT` | relay | `0.0.0.0:8000` |
 | `PAGER_MCP_PATH` / `PAGER_BRIDGE_PATH` | relay | `/mcp` / `/bridge` |
 | `PAGER_SQLITE_DB` | relay | `users.db` |
-| `PAGER_PUBLIC_URL` | relay | `https://pager.duckdns.org` |
+| `PAGER_PUBLIC_URL` | relay | `https://context-pager.duckdns.org` |
 | `PAGER_RATE_LIMIT_CALLS_PER_HOUR` | relay | `100` |
 | `PAGER_MAX_BRIDGES_PER_KEY` | relay | `2` |
 | `PAGER_SIGNUP_PER_IP_PER_DAY` | relay | `5` |
