@@ -1,5 +1,8 @@
 # Context Pager
 
+> **[Get Started (5 min) →](GETTING_STARTED.md)** — step-by-step guide with
+> screenshots for every MCP client (Claude Desktop, Claude Code, Cursor, OpenCode).
+
 **Cut your AI agent's token costs by 4-10x.** Context Pager lets your AI read
 compressed pages of documents instead of full files — like an OS pages memory
 to RAM, your agent pages through documents on demand.
@@ -128,6 +131,9 @@ configures nightly backups. See [CONTEXT.md](CONTEXT.md) for details.
 │  laptop)    │                      └──────────────┘
 └─────────────┘
 ```
+- **Agent**: your AI client (Claude, Cursor, etc.) connects to the relay via HTTPS.
+- **Relay**: routes requests to your bridge. Never sees your documents.
+- **Bridge**: runs on your laptop, stores documents, runs AI models. Dials out to the relay.
 
 - **Bridge** (your laptop): stores your documents, runs AI models for
   compression and search, handles PII masking. Never sends documents to the relay.
