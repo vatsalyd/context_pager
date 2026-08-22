@@ -170,10 +170,10 @@ timeout) — retry with backoff. `false` means permanent (bad key, missing doc, 
 
 Run: `python -m pytest tests/` and `python -m ruff check src tests`.
 
-## Known Limitations (v1)
+## Known Limitations
 
 - Text/markdown/code only; PDFs/DOCX must be converted to text first.
 - Dense-only retrieval (no sparse/RRF — the payoff was never measured).
-- v1 models run on the user's laptop; very large libraries need lite mode or a beefier box.
+- Models run on the user's laptop; very large libraries need lite mode or a beefier box.
 - No admin UI; manage documents via `pager docs add|list|reindex|remove` and see
   `pager stats` for cost savings.

@@ -508,12 +508,9 @@ pip install "context-pager[bridge]"
 
 ### Bridge won't start
 
-**"Torch not compiled with CUDA"** — This is normal. The bridge uses CPU-only
-mode by default. If you have an NVIDIA GPU and want CUDA acceleration, set:
-
-```bash
-export PAGER_DEVICE=cuda
-```
+**"Torch not compiled with CUDA"** — This is normal. The bridge auto-detects
+whether CUDA is available and uses CPU-only mode by default. No configuration
+needed.
 
 **"ModuleNotFoundError: No module named 'torch'"** — Reinstall with bridge extras:
 
