@@ -80,6 +80,7 @@ class BridgeClient:
     async def _serve_connection(self) -> None:
         ws = await websockets.connect(self._settings.relay_ws_url, ping_interval=30, ping_timeout=60)
         self._ws = ws
+        pending: set[asyncio.Task] = set()
         try:
             await self._authenticate(ws)
             async for raw in ws:
@@ -88,11 +89,21 @@ class BridgeClient:
                 except Exception:
                     log.warning("dropping malformed request from relay")
                     continue
-                resp = await self._handle(req)
-                await ws.send(resp.model_dump_json())
+                task = asyncio.create_task(self._handle_and_send(ws, req))
+                pending.add(task)
+                task.add_done_callback(pending.discard)
         finally:
+            for t in pending:
+                t.cancel()
             self._ws = None
             await ws.close()
+
+    async def _handle_and_send(self, ws, req: RpcRequest) -> None:
+        resp = await self._handle(req)
+        try:
+            await ws.send(resp.model_dump_json())
+        except Exception:
+            log.warning("failed to send response for req %s", req.id)
 
     async def _authenticate(self, ws) -> None:
         await ws.send(AuthMessage(params={"bridge_key": self._settings.bridge_key}).model_dump_json())
