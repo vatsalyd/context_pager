@@ -10,7 +10,7 @@ from context_pager.relay.connections import ConnectionManager
 from context_pager.relay.db import RelayDB, sha256
 from context_pager.relay.ratelimit import TokenBucket
 
-_TOOL_TIMEOUT = 30.0
+_TOOL_TIMEOUT = 120.0
 
 
 async def authorize(ctx, tool: str, db: RelayDB, bucket: TokenBucket) -> dict | str:

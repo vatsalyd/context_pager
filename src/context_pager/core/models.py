@@ -24,14 +24,16 @@ class Models:
         if self._embedder is None:
             async with self._lock:
                 if self._embedder is None:
-                    self._embedder = build_embedder(self.settings)
+                    loop = asyncio.get_running_loop()
+                    self._embedder = await loop.run_in_executor(None, build_embedder, self.settings)
         return self._embedder
 
     async def compressor(self) -> Compressor:
         if self._compressor is None:
             async with self._lock:
                 if self._compressor is None:
-                    self._compressor = build_compressor(self.settings)
+                    loop = asyncio.get_running_loop()
+                    self._compressor = await loop.run_in_executor(None, build_compressor, self.settings)
         return self._compressor
 
     async def redact(self, text: str) -> tuple[str, dict[str, int]]:
