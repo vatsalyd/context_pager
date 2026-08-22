@@ -1,22 +1,17 @@
 # Getting Started with Context Pager
 
-This guide walks you through everything from zero to having your AI agent search
-and read your documents with compressed, cost-efficient pages.
+There are **three ways** to use Context Pager. Pick the one that fits your
+setup -- each one is a complete, self-contained guide from zero to working.
 
-## Table of contents
+| | Local only | With relay | Self-hosted relay |
+|---|---|---|---|
+| **Time** | 2 min | 5 min | 15 min |
+| **Internet** | Not needed | Required (first time) | Required |
+| **Best for** | Trying it out, local dev | Multiple devices, cloud AI | Teams, full control |
+| **Limitation** | Same machine only | None | You manage the server |
 
-- [What is Context Pager?](#what-is-context-pager)
-- [How it works (in plain English)](#how-it-works-in-plain-english)
-- [Prerequisites](#prerequisites)
-- [Step 1: Install](#step-1-install)
-- [Step 2: Add your documents](#step-2-add-your-documents)
-- [Step 3: Start the bridge](#step-3-start-the-bridge)
-- [Step 4: Connect your AI client](#step-4-connect-your-ai-client)
-- [Using Context Pager](#using-context-pager)
-- [Three ways to use it](#three-ways-to-use-it)
-- [Manage your documents](#manage-your-documents)
-- [Troubleshooting](#troubleshooting)
-- [Next steps](#next-steps)
+**New to Context Pager?** Read the [What is Context Pager?](#what-is-context-pager)
+section first, then pick a way below.
 
 ---
 
@@ -37,48 +32,26 @@ The result: your AI gets the same answer for a fraction of the token cost.
 
 ---
 
-## How it works (in plain English)
-
-Context Pager has two parts:
-
-- **Bridge** — runs on your laptop. This is the "brain" that holds your
-  documents, runs the AI models for search and compression, and does PII masking.
-  Your documents **never leave your laptop**.
-
-- **Relay** — a small cloud server (free tier, $0/month) that routes requests
-  between your AI tool (Claude Desktop, Cursor, etc.) and your laptop. It never
-  sees your documents — it only sees encrypted request envelopes.
-
-When you ask your AI a question:
-
-```
-You → AI asks "What were the Q3 targets?"
-        ↓
-    Relay routes the search request to your bridge
-        ↓
-    Bridge searches your documents, finds the answer on page 2 of "report.txt"
-        ↓
-    Bridge compresses page 2 (from 8,000 tokens → 2,000 tokens)
-        ↓
-    Relay sends the compressed page back to your AI
-        ↓
-AI → Gets the answer in ~25% of the tokens
-```
-
----
-
 ## Prerequisites
 
-- **Python 3.11 or newer** — check with `python --version`
-- **~4GB of free disk space** — for the AI models (bge-m3 for embeddings, llmlingua-2 for compression)
-- **~4GB of RAM** — the models need memory to run
-- **A terminal/command prompt** — any will work (Terminal, PowerShell, iTerm, etc.)
+- **Python 3.11 or newer** -- check with `python --version`
+- **~4GB of free disk space** -- for the AI models (bge-m3 for embeddings, llmlingua-2 for compression)
+- **~4GB of RAM** -- the models need memory to run
+- **A terminal/command prompt** -- any will work (Terminal, PowerShell, iTerm, etc.)
+
+> **Tip:** If `pager` works as a shortcut on your system, you can use `pager` instead
+> of `python -m context_pager.cli` in all commands below. On Windows Store Python,
+> the `pager` shortcut may not be on PATH -- use the full `python -m` form.
+
 
 ---
 
-## Step 1: Install
+## Way 1: Local only (simplest, 2 minutes)
 
-Open your terminal and run:
+No signup, no internet required, no keys. Your AI connects directly to the
+bridge on your laptop.
+
+### Step 1: Install
 
 ```bash
 pip install "context-pager[bridge]"
@@ -96,13 +69,7 @@ python -m context_pager.cli --help
 
 You should see the available commands: `bridge`, `serve`, `docs`, `stats`.
 
-> **Tip:** If `pager` works as a shortcut on your system, you can use `pager` instead
-> of `python -m context_pager.cli` in all commands below. On Windows Store Python,
-> the `pager` shortcut may not be on PATH — use the full `python -m` form.
-
----
-
-## Step 2: Add your documents
+### Step 2: Add your documents
 
 Context Pager works with **text files**: `.txt`, `.md`, `.py`, `.js`, `.ts`,
 `.go`, `.rs`, `.java`, `.json`, `.yaml`, and many more code/text formats.
@@ -110,17 +77,14 @@ Context Pager works with **text files**: `.txt`, `.md`, `.py`, `.js`, `.ts`,
 **Convert PDFs and Word docs to text first:**
 
 ```bash
-# PDFs
 pdftotext report.pdf report.txt
-
-# Or use any converter you prefer
 ```
 
 **Add files one at a time:**
 
 ```bash
 python -m context_pager.cli docs add report.txt
-# → added report.txt -> doc_id=a1b2c3d4e5f6
+# -> added report.txt -> doc_id=a1b2c3d4e5f6
 ```
 
 **Or add multiple files:**
@@ -138,13 +102,11 @@ need this ID when your AI reads the file.
 
 ```bash
 python -m context_pager.cli docs list
-# → a1b2c3d4e5f6  report  text  chunks=12  indexed=2026-08-20T10:00:00
-# → f6e5d4c3b2a1  notes   text  chunks=4   indexed=2026-08-20T10:01:00
+# -> a1b2c3d4e5f6  report  text  chunks=12  indexed=2026-08-20T10:00:00
+# -> f6e5d4c3b2a1  notes   text  chunks=4   indexed=2026-08-20T10:01:00
 ```
 
----
-
-## Step 3: Start the bridge
+### Step 3: Start the bridge
 
 ```bash
 python -m context_pager.cli bridge
@@ -156,29 +118,22 @@ After that, it starts instantly.
 You'll see output like:
 
 ```
-INFO:context_pager.bridge.client:PAGER_BRIDGE_KEY not set — serving localhost MCP only.
+INFO:context_pager.bridge.client:PAGER_BRIDGE_KEY not set -- serving localhost MCP only.
 ```
 
 This means the bridge is running and serving on `http://127.0.0.1:8000/mcp`.
 Your AI can now connect to it locally.
 
-**Keep this terminal open** — the bridge needs to stay running while your AI
+**Keep this terminal open** -- the bridge needs to stay running while your AI
 uses it.
 
----
+### Step 4: Connect your AI client
 
-## Step 4: Connect your AI client
-
-Now you need to tell your AI tool where to find Context Pager. The connection
-details depend on which AI tool you use.
-
-### Claude Desktop
+#### Claude Desktop
 
 1. Open Claude Desktop
-2. Go to **Settings** → **Developer** → **Edit Config**
-3. This opens `claude_desktop_config.json`. Add the `mcpServers` section:
-
-**Local mode** (bridge on your laptop, no internet needed):
+2. Go to **Settings** -> **Developer** -> **Edit Config**
+3. Add the `mcpServers` section:
 
 ```json
 {
@@ -191,35 +146,15 @@ details depend on which AI tool you use.
 }
 ```
 
-**Relay mode** (access from anywhere, requires signup):
-
-```json
-{
-  "mcpServers": {
-    "pager": {
-      "type": "http",
-      "url": "https://context-pager.duckdns.org/mcp",
-      "headers": {
-        "Authorization": "Bearer pgr_agent_..."
-      }
-    }
-  }
-}
-```
-
-Replace `pgr_agent_...` with your actual agent key (see [Three ways to use it](#three-ways-to-use-it)).
-
 4. Restart Claude Desktop
 
-### Claude Code
-
-Run this in your terminal:
+#### Claude Code
 
 ```bash
 claude mcp add pager --transport http http://127.0.0.1:8000/mcp
 ```
 
-Or manually edit `.mcp.json` in your project root:
+Or edit `.mcp.json`:
 
 ```json
 {
@@ -232,35 +167,14 @@ Or manually edit `.mcp.json` in your project root:
 }
 ```
 
-For relay mode, use:
+#### Cursor
 
-```json
-{
-  "mcpServers": {
-    "pager": {
-      "type": "http",
-      "url": "https://context-pager.duckdns.org/mcp",
-      "headers": {
-        "Authorization": "Bearer pgr_agent_..."
-      }
-    }
-  }
-}
-```
+1. Open Cursor -> **Settings** -> **MCP**
+2. Click **Add new MCP server**
+3. Fill in: **Name:** `pager`, **Type:** `http`, **URL:** `http://127.0.0.1:8000/mcp`
+4. Click **Save**
 
-### Cursor
-
-1. Open Cursor
-2. Go to **Settings** → **MCP**
-3. Click **Add new MCP server**
-4. Fill in:
-   - **Name:** `pager`
-   - **Type:** `http`
-   - **URL:** `http://127.0.0.1:8000/mcp` (local) or `https://context-pager.duckdns.org/mcp` (relay)
-   - **Headers:** `{ "Authorization": "Bearer pgr_agent_..." }` (relay mode only)
-5. Click **Save**
-
-### OpenCode
+#### OpenCode
 
 Add to your `opencode.json`:
 
@@ -275,7 +189,135 @@ Add to your `opencode.json`:
 }
 ```
 
-For relay mode:
+#### Any other MCP client
+
+Context Pager works with **any MCP-compatible client**. You need:
+
+- **Transport:** HTTP (Streamable HTTP)
+- **URL:** `http://127.0.0.1:8000/mcp`
+
+
+---
+
+## Way 2: With relay (remote access, 5 minutes)
+
+Access your documents from anywhere -- your phone, another computer, or
+cloud-based AI tools.
+
+### Step 1: Install (same as Way 1)
+
+```bash
+pip install "context-pager[bridge]"
+python -m context_pager.cli --help
+```
+
+### Step 2: Add your documents (same as Way 1)
+
+```bash
+python -m context_pager.cli docs add report.txt
+python -m context_pager.cli docs add notes.md
+```
+
+### Step 3: Get your keys (one-time, free)
+
+```bash
+curl -X POST https://context-pager.duckdns.org/v1/signup
+```
+
+This returns:
+
+```json
+{
+  "user_id": "your-user-id",
+  "agent_key": "pgr_agent_...",
+  "bridge_key": "pgr_bridge_...",
+  "note": "Store these now -- keys are shown once and stored only as hashes."
+}
+```
+
+**Save both keys.** You won't see them again.
+
+### Step 4: Start the bridge with relay key
+
+Set the bridge key so your laptop can talk to the relay:
+
+**Windows PowerShell:**
+
+```powershell
+$env:PAGER_BRIDGE_KEY="pgr_bridge_..."
+python -m context_pager.cli bridge
+```
+
+**macOS / Linux:**
+
+```bash
+export PAGER_BRIDGE_KEY="pgr_bridge_..."
+python -m context_pager.cli bridge
+```
+
+You should see the bridge connect to the relay. Keep this terminal open.
+
+### Step 5: Connect your AI client to the relay
+
+The relay URL is `https://context-pager.duckdns.org/mcp`. Every client needs
+the `Authorization: Bearer pgr_agent_...` header.
+
+#### Claude Desktop
+
+Edit `claude_desktop_config.json` (Settings -> Developer -> Edit Config):
+
+```json
+{
+  "mcpServers": {
+    "pager": {
+      "type": "http",
+      "url": "https://context-pager.duckdns.org/mcp",
+      "headers": {
+        "Authorization": "Bearer pgr_agent_..."
+      }
+    }
+  }
+}
+```
+
+Replace `pgr_agent_...` with your actual agent key. Restart Claude Desktop.
+
+#### Claude Code
+
+```bash
+claude mcp add pager --transport http https://context-pager.duckdns.org/mcp --header "Authorization: Bearer pgr_agent_..."
+```
+
+Or edit `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "pager": {
+      "type": "http",
+      "url": "https://context-pager.duckdns.org/mcp",
+      "headers": {
+        "Authorization": "Bearer pgr_agent_..."
+      }
+    }
+  }
+}
+```
+
+#### Cursor
+
+1. Open Cursor -> **Settings** -> **MCP**
+2. Click **Add new MCP server**
+3. Fill in:
+   - **Name:** `pager`
+   - **Type:** `http`
+   - **URL:** `https://context-pager.duckdns.org/mcp`
+   - **Headers:** `{ "Authorization": "Bearer pgr_agent_..." }`
+4. Click **Save**
+
+#### OpenCode
+
+Add to `opencode.json`:
 
 ```json
 {
@@ -291,15 +333,89 @@ For relay mode:
 }
 ```
 
-### Any other MCP client
-
-Context Pager works with **any MCP-compatible client**. You need:
+#### Any other MCP client
 
 - **Transport:** HTTP (Streamable HTTP)
-- **URL:** `http://127.0.0.1:8000/mcp` (local) or `https://context-pager.duckdns.org/mcp` (relay)
-- **Auth header (relay only):** `Authorization: Bearer pgr_agent_...`
+- **URL:** `https://context-pager.duckdns.org/mcp`
+- **Auth header:** `Authorization: Bearer pgr_agent_...`
+
+### How it works
+
+Your laptop's bridge connects *outward* to the relay. The relay never connects
+*to* your laptop -- this means it works behind firewalls and NAT without any
+port forwarding.
+
 
 ---
+
+## Way 3: Self-hosted relay (full control, 15 minutes)
+
+Deploy your own relay on AWS free tier ($0/month). You control the server,
+the keys, and the data flow.
+
+### Step 1: Launch an AWS instance
+
+1. Launch a **t3.micro** with Ubuntu 22.04 or 24.04
+2. Open port 80 and 443 in the security group
+3. SSH into the instance
+
+### Step 2: Get a free DuckDNS domain
+
+1. Go to [duckdns.org](https://www.duckdns.org)
+2. Sign in with GitHub/Google
+3. Create a subdomain (e.g., `myserver.duckdns.org`)
+4. Point it to your EC2 instance's public IP
+
+### Step 3: Run the setup script
+
+Clone this repo on the EC2 instance and run the setup:
+
+```bash
+git clone https://github.com/vatsalyd/context_pager.git
+cd context_pager
+sudo PAGER_DUCKDNS_DOMAIN=myserver PAGER_DUCKDNS_TOKEN=your-token bash deploy/setup_relay.sh
+```
+
+This script:
+
+- Installs the relay package in a Python venv
+- Sets up Caddy (free automatic TLS certificates)
+- Creates a systemd service (auto-starts on boot)
+- Configures nightly database backups
+- Points your DuckDNS domain to the server
+
+### Step 4: Get your keys
+
+```bash
+curl -X POST https://myserver.duckdns.org/v1/signup
+```
+
+This returns your `agent_key` and `bridge_key`. Save both.
+
+### Step 5: Start your bridge
+
+```bash
+# Windows PowerShell:
+$env:PAGER_BRIDGE_KEY="pgr_bridge_..."
+python -m context_pager.cli bridge
+
+# macOS / Linux:
+export PAGER_BRIDGE_KEY="pgr_bridge_..."
+python -m context_pager.cli bridge
+```
+
+### Step 6: Connect your AI client
+
+Use your own relay URL instead of `context-pager.duckdns.org`:
+
+```
+URL: https://myserver.duckdns.org/mcp
+Header: Authorization: Bearer pgr_agent_...
+```
+
+Follow the client-specific instructions from [Way 2](#way-2-with-relay-remote-access-5-minutes)
+replacing the URL and key.
+
 
 ## Using Context Pager
 
@@ -331,114 +447,6 @@ Your AI can commit insights that resurface on future searches:
 
 The AI calls `commit_to_long_term_memory(key="q3_target", insights="Q3 revenue target is $42M")`.
 Next time you search for Q3 targets, this insight appears automatically.
-
----
-
-## Three ways to use it
-
-### Way 1: Local only (simplest, 2 minutes)
-
-No signup, no internet required, no keys. Your AI connects directly to the
-bridge on your laptop.
-
-**Setup:**
-
-```bash
-pip install "context-pager[bridge]"
-python -m context_pager.cli docs add yourfile.txt
-python -m context_pager.cli bridge
-# Connect your MCP client to http://127.0.0.1:8000/mcp
-```
-
-**Best for:** Trying it out, local development, privacy-sensitive work.
-
-**Limitation:** Only works when the bridge is running on the same machine as
-your AI tool.
-
-### Way 2: With relay (remote access, 5 minutes)
-
-Access your documents from anywhere — your phone, another computer, or
-cloud-based AI tools.
-
-**Setup:**
-
-```bash
-# 1. Get your keys (one-time, free, takes 5 seconds)
-curl -X POST https://context-pager.duckdns.org/v1/signup
-```
-
-This returns:
-
-```json
-{
-  "user_id": "your-user-id",
-  "agent_key": "pgr_agent_...",
-  "bridge_key": "pgr_bridge_...",
-  "note": "Store these now — keys are shown once and stored only as hashes."
-}
-```
-
-**Save both keys.** You won't see them again.
-
-```bash
-# 2. Set the bridge key (so your laptop can talk to the relay)
-# On Windows PowerShell:
-$env:PAGER_BRIDGE_KEY="pgr_bridge_..."
-# On macOS/Linux:
-# export PAGER_BRIDGE_KEY="pgr_bridge_..."
-
-python -m context_pager.cli bridge
-
-# 3. Connect your MCP client to the relay
-# URL: https://context-pager.duckdns.org/mcp
-# Header: Authorization: Bearer pgr_agent_...
-```
-
-**Best for:** Using Context Pager from multiple devices, sharing with a team,
-cloud-based AI tools.
-
-**How it works:** Your laptop's bridge connects *outward* to the relay. The
-relay never connects *to* your laptop — this means it works behind firewalls
-and NAT without any port forwarding.
-
-### Way 3: Self-hosted relay (full control, 15 minutes)
-
-Deploy your own relay on AWS free tier ($0/month). You control the server,
-the keys, and the data flow.
-
-**Setup:**
-
-```bash
-# 1. Launch an AWS t3.micro (Ubuntu 22.04 or 24.04)
-
-# 2. Get a free DuckDNS domain at https://www.duckdns.org
-
-# 3. Clone this repo on the EC2 instance
-git clone https://github.com/vatsalyd/context_pager.git
-cd context_pager
-
-# 4. Run the setup script
-sudo PAGER_DUCKDNS_DOMAIN=myserver PAGER_DUCKDNS_TOKEN=your-token bash deploy/setup_relay.sh
-```
-
-This script:
-- Installs the relay package
-- Sets up Caddy (free automatic TLS certificates)
-- Creates a systemd service (auto-starts on boot)
-- Configures nightly database backups
-- Points your DuckDNS domain to the server
-
-After it finishes:
-
-```bash
-# Get your keys
-curl -X POST https://myserver.duckdns.org/v1/signup
-```
-
-Then follow "Way 2" above using your own relay URL instead of
-`context-pager.duckdns.org`.
-
-**Best for:** Teams, production deployments, maximum control.
 
 ---
 
