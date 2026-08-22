@@ -2,6 +2,19 @@
 
 All notable changes to context-pager.
 
+## [0.3.2] - 2026-08-22
+
+### Fixed
+- **Bridge timeout on cold start**: relay tool timeout increased from 30s to
+  120s. Laptops loading bge-m3 + llmlingua-2 can take 30–60s on first call.
+- **WebSocket disconnects during model loading**: `build_embedder()` and
+  `build_compressor()` now run in `loop.run_in_executor()` to avoid blocking
+  the event loop and killing WebSocket ping/pong keepalive.
+- **Bridge can't handle concurrent tool calls**: tool handlers in the bridge
+  message loop now run as concurrent `asyncio.create_task` instead of blocking
+  the message loop sequentially. Slow tool calls no longer prevent the bridge
+  from receiving new requests or responding to pings.
+
 ## [0.3.0] - 2026-08-14
 
 ### Fixed
