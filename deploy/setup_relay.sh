@@ -64,6 +64,12 @@ $FQDN {
 EOF
 fi
 chmod 0644 /etc/caddy/Caddyfile
+
+log "installing landing page"
+if [[ -f "$SCRIPT_DIR/landing.html" ]]; then
+    install -m 0644 "$SCRIPT_DIR/landing.html" /etc/context-pager/landing.html
+fi
+
 systemctl enable --now caddy
 systemctl reload caddy
 
