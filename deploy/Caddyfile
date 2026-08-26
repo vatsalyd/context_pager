@@ -4,6 +4,79 @@
 pager.duckdns.org {
     encode gzip
 
+    handle {
+        path /
+        respond `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Context Pager</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         color: #1a1a1a; background: #fafafa; line-height: 1.6; }
+  .container { max-width: 700px; margin: 60px auto; padding: 0 24px; }
+  h1 { font-size: 2rem; margin-bottom: 8px; }
+  .tagline { font-size: 1.1rem; color: #555; margin-bottom: 32px; }
+  h2 { font-size: 1.15rem; margin: 28px 0 12px; color: #333; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.9rem; }
+  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #e0e0e0; }
+  th { background: #f0f0f0; font-weight: 600; }
+  code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; }
+  pre { background: #1a1a1a; color: #e0e0e0; padding: 16px; border-radius: 8px;
+        overflow-x: auto; margin: 12px 0; font-size: 0.85rem; }
+  pre code { background: none; padding: 0; color: inherit; }
+  a { color: #0969da; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .tools { list-style: none; margin: 12px 0; }
+  .tools li { padding: 6px 0; }
+  .tools strong { color: #333; }
+  hr { border: none; border-top: 1px solid #e0e0e0; margin: 32px 0; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Context Pager</h1>
+  <p class="tagline">Cut your AI agent's token costs by 4-10x.</p>
+
+  <p>Context Pager lets your AI read compressed pages of documents instead of
+  full files. Like an OS pages memory to RAM, your agent pages through
+  documents on demand.</p>
+
+  <h2>Three tools</h2>
+  <ul class="tools">
+    <li><strong>search_documents</strong> &mdash; find relevant documents and recalled insights</li>
+    <li><strong>compress_document</strong> &mdash; read a compressed, PII-masked page</li>
+    <li><strong>commit_to_long_term_memory</strong> &mdash; persist facts that resurface on later searches</li>
+  </ul>
+
+  <h2>Get started</h2>
+
+  <table>
+    <tr><th></th><th>Local only</th><th>With relay</th><th>Self-hosted</th></tr>
+    <tr><td>Time</td><td>2 min</td><td>5 min</td><td>15 min</td></tr>
+    <tr><td>Internet</td><td>Not needed</td><td>First time</td><td>Required</td></tr>
+    <tr><td>Best for</td><td>Trying it out</td><td>Multiple devices</td><td>Teams</td></tr>
+  </table>
+
+  <pre><code>pip install "context-pager[bridge]"</code></pre>
+
+  <h2>Sign up</h2>
+  <pre><code>curl -X POST https://context-pager.duckdns.org/v1/signup</code></pre>
+  <p>Returns your <code>pgr_agent_*</code> and <code>pgr_bridge_*</code> keys. Shown once.</p>
+
+  <hr>
+
+  <p><a href="https://github.com/vatsalyd/context_pager">GitHub</a> &middot;
+  <a href="https://github.com/vatsalyd/context_pager/blob/main/GETTING_STARTED.md">Full setup guide</a> &middot;
+  <a href="https://github.com/vatsalyd/context_pager/blob/main/CONTEXT.md">Architecture &amp; API</a></p>
+</div>
+</body>
+</html>` 200 {
+        Content-Type text/html; charset=utf-8
+    }
+
     reverse_proxy 127.0.0.1:8000 {
         flush_interval -1
     }
