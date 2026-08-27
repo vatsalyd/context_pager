@@ -1,7 +1,7 @@
 # Context Pager
 
 **Cut your AI agent's token costs by 4-10x.** Context Pager lets your AI read
-compressed pages of documents instead of full files — like an OS pages memory
+compressed pages of documents instead of full files like an OS pages memory
 to RAM, your agent pages through documents on demand.
 
 ```
